@@ -11,18 +11,25 @@ repositories {
     mavenCentral()
 }
 
-// RustRover 基于 CLion，使用 CLion 的 build number 作为 intellij version
-// CL 2024.2.1 对应 RustRover 2024.2.x / 2026.x 系列
-val clionVersion = "2024.2.1"
-
+/*
+ * 使用 IntelliJ IDEA Community 作为 base IDE（CI 环境总是可用），
+ * 从 JetBrains Marketplace 下载 Rust 插件。
+ *
+ * Rust 插件 (org.rust.lang) 仅随 RustRover 捆绑发行，
+ * CLion 等其他 IDE 需要从 Marketplace 安装。
+ */
 intellij {
-    type.set("CL")
-    version.set(clionVersion)
+    type.set("IC")
+    version.set("2024.2.2")
     pluginName.set("hirust-mapper-navigator")
     downloadSources.set(false)
 
-    // 依赖 Rust 语言插件（intellij-rust），提供 RsOuterAttr, RsMetaItem 等 PSI 类型
-    plugins.set(listOf("org.rust.lang"))
+    // org.rust.lang: Rust 语言插件，提供 RsOuterAttr, RsMetaItem, RsLitExpr 等 PSI 类型
+    // org.rust.clion: Rust 对 CLion/CMake 的集成（可选，提供 C 项目支持）
+    plugins.set(listOf(
+        "org.rust.lang",
+        "org.toml.lang"
+    ))
 }
 
 kotlin {
