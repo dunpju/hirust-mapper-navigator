@@ -2,49 +2,52 @@ package com.hirust.mapper.navigation
 
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.util.TextRange
-import com.intellij.patterns.ElementPattern
 import com.intellij.patterns.PlatformPatterns
 import com.intellij.psi.*
 import com.intellij.util.ProcessingContext
-import org.rust.lang.core.psi.*
-import org.rust.lang.core.psi.ext.*
 
 /**
  * RustRover 引用贡献者 — 插件入口点。
  *
- * 在 Rust PSI 树中扫描所有 #[...] 外部属性（outer attribute），
- * 识别 hirust-mapper 的自定义宏名称和 namespace 参数值，
- * 分发给对应的 Reference：
+ * 使用通用 PsiElement API，编译时不依赖 org.rust.lang 插件。
+ * 通过 PSI 元素的文本内容和祖先链关系识别目标节点，
+ * 运行时由 RustRover 的 Rust 插件提供实际 PSI 类型。
  *
- *   - #[mapper_query] / #[dao] 等 → MacroDefinitionReference（跳转到 proc macro 定义）
- *   - namespace 字符串值 → NamespaceToXmlReference（跳转到 XML 文件）
- *
- * 注册方式: 在 plugin.xml 中通过 <referenceContributor language="Rust"> 注册，
- * IntelliJ 会自动在匹配的 PSI 元素上调用 getReferencesByElement()。
+ * 匹配两类 PSI 元素:
+ * 1. 外部属性中的宏标识符: #[mapper_query] / #[dao]
+ *    → MacroDefinitionReference
+ * 2. namespace 字符串字面量: "crate::app::dao::..."
+ *    → NamespaceToXmlReference
  */
 class MacroAttributeReferenceContributor : PsiReferenceContributor() {
 
     private val log = Logger.getInstance(MacroAttributeReferenceContributor::class.java)
 
     /**
-     * PSI 元素引用注册器。
+     * Rust 外部属性 PSI 元素类型名。
      *
-     * 对两类 PSI 元素创建自定义引用:
-     * 1. RsMetaItem — 属性宏标识符节点（如 mapper_query, dao）
-     * 2. RsLitExpr — 字符串字面量节点（如 namespace 的值）
+     * Rust 插件在 PSI 树中将 #[...] 表示为 "RsOuterAttr" 元素，
+     * 内部子节点包含 RsMetaItem（属性项）等。
+     * 我们无法在编译时引用这些类型，但在运行时可以通过类名匹配。
      */
+    companion object {
+        const val RS_META_ITEM = "RsMetaItem"
+        const val RS_LIT_EXPR = "RsLitExpr"
+        const val RS_OUTER_ATTR = "RsOuterAttr"
+    }
+
     override fun registerReferenceProviders(registrar: PsiReferenceRegistrar) {
         // ==========================================
         // 1. 属性宏名称引用: #[mapper_query] / #[dao]
         // ==========================================
         registrar.registerReferenceProvider(
-            PlatformPatterns.psiElement(RsMetaItem::class.java),
+            PlatformPatterns.psiElement().withName(RS_META_ITEM),
             object : PsiReferenceProvider() {
                 override fun getReferencesByElement(
                     element: PsiElement,
                     context: ProcessingContext
                 ): Array<PsiReference> {
-                    return createMetaItemReferences(element as RsMetaItem)
+                    return createMetaItemReferences(element)
                 }
             }
         )
@@ -53,173 +56,161 @@ class MacroAttributeReferenceContributor : PsiReferenceContributor() {
         // 2. Namespace 字符串引用: "crate::app::dao::..."
         // ==========================================
         registrar.registerReferenceProvider(
-            PlatformPatterns.psiElement(RsLitExpr::class.java),
+            PlatformPatterns.psiElement().withName(RS_LIT_EXPR),
             object : PsiReferenceProvider() {
                 override fun getReferencesByElement(
                     element: PsiElement,
                     context: ProcessingContext
                 ): Array<PsiReference> {
-                    return createLitExprReferences(element as RsLitExpr)
+                    return createLitExprReferences(element)
                 }
             }
         )
     }
 
     /**
-     * 为 RsMetaItem 创建引用。
+     * 为属性宏标识符创建引用。
      *
-     * 匹配条件:
-     *   - 宏名称属于已知的 mapper 系列 (mapper_query, dao, mapper_insert 等)
-     *   - 必须是外部属性 #[...] 的一部分
-     *
-     * PSI 上下文示例:
-     *   #[mapper_query]
-     *     ^^^^^^^^^^^^^
-     *   #[dao(namespace = "crate::app::dao::privilege_project_dao")]
-     *     ^^^
-     *   #[mapper_query(id = "list")]
-     *     ^^^^^^^^^^^^^
+     * 匹配逻辑:
+     *   - 元素的第一个非空子节点的文本即为宏名称 (e.g. "mapper_query")
+     *   - 宏名称必须属于已知的 mapper 系列
+     *   - 祖先链中必须存在 RsOuterAttr (表示是 #[...] 外部属性)
      */
-    private fun createMetaItemReferences(metaItem: RsMetaItem): Array<PsiReference> {
-        // 获取宏名称
-        val macroName = metaItem.path?.referenceName ?: return noReferences()
+    private fun createMetaItemReferences(element: PsiElement): Array<PsiReference> {
+        val macroName = extractMacroName(element) ?: return PsiReference.EMPTY_ARRAY
 
-        // 仅处理已知的 mapper 宏
         if (!MacroDefinitionReference.isMapperMacro(macroName)) {
-            return noReferences()
+            return PsiReference.EMPTY_ARRAY
         }
 
         // 确认是外部属性的一部分
-        val containingAttr = metaItem.parent as? RsOuterAttr
-        if (containingAttr == null) {
-            // 也检查是否在 item 的 attribute 列表中
-            val parent = metaItem.parent?.parent
-            if (parent !is RsOuterAttr && parent !is RsAttr) {
-                return noReferences()
-            }
+        if (!hasAncestorNamed(element, RS_OUTER_ATTR)) {
+            return PsiReference.EMPTY_ARRAY
         }
 
         log.debug("[hirust-mapper-navigator] Macro reference created for: $macroName")
 
-        // 在宏名称标识符上创建引用
-        val ident = metaItem.path?.lastSegment ?: metaItem.identifier
-        if (ident != null) {
-            return arrayOf(MacroDefinitionReference(ident.psi ?: metaItem, macroName))
-        }
-
-        return arrayOf(MacroDefinitionReference(metaItem, macroName))
+        // 尝试找到宏名称的标识符子节点作为锚点
+        val ident = findIdentifierChild(element)
+        return arrayOf(MacroDefinitionReference(ident ?: element, macroName))
     }
 
     /**
-     * 为 RsLitExpr 创建引用。
+     * 为字符串字面量创建引用。
      *
-     * 匹配条件:
-     *   - 是字符串字面量 (以 " 开头和结尾)
-     *   - 字符串值包含 "::" (看起来像 Rust 路径)
-     *   - 位于 #[dao(namespace = "...")] 的 namespace 参数位置
-     *
-     * PSI 上下文示例:
-     *   #[dao(namespace = "crate::app::dao::privilege_project_dao")]
-     *                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-     *   const NAMESPACE: &str = "crate::app::dao::privilege_notify_dao";
-     *                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     * 匹配逻辑:
+     *   - 文本以 " 开头和结尾
+     *   - 去除引号后的值包含 "::" (Rust 路径)
+     *   - 祖先链中存在包含 "namespace" 的上下文
      */
-    private fun createLitExprReferences(litExpr: RsLitExpr): Array<PsiReference> {
-        val text = litExpr.text
+    private fun createLitExprReferences(element: PsiElement): Array<PsiReference> {
+        val text = element.text
 
-        // 必须是字符串字面量
         if (!text.startsWith("\"") || !text.endsWith("\"") || text.length < 3) {
-            return noReferences()
+            return PsiReference.EMPTY_ARRAY
         }
 
-        // 提取字符串值
         val value = text.substring(1, text.length - 1)
-
-        // 必须包含 "::" 才可能是 namespace 路径
         if (!value.contains("::")) {
-            return noReferences()
+            return PsiReference.EMPTY_ARRAY
         }
 
-        // 检查是否在 dao 属性或 const 声明的 namespace 上下文中
-        if (!isNamespaceContext(litExpr)) {
-            return noReferences()
+        if (!isNamespaceContext(element)) {
+            return PsiReference.EMPTY_ARRAY
         }
 
         log.debug("[hirust-mapper-navigator] Namespace-to-XML reference created for: $value")
+        return arrayOf(NamespaceToXmlReference(element))
+    }
 
-        return arrayOf(NamespaceToXmlReference(litExpr))
+    /**
+     * 从 RsMetaItem 元素中提取宏名称。
+     *
+     * RsMetaItem 的文本结构:
+     *   "mapper_query"           → 宏名 = "mapper_query"
+     *   "mapper_query(id = \"list\")" → 宏名 = "mapper_query"
+     *   "dao(namespace = \"...\")"   → 宏名 = "dao"
+     */
+    private fun extractMacroName(element: PsiElement): String? {
+        val text = element.text
+        // 宏名是第一个 "(" 或空格之前的部分
+        val parenIndex = text.indexOf('(')
+        val spaceIndex = text.indexOf(' ')
+        val endIndex = when {
+            parenIndex < 0 && spaceIndex < 0 -> text.length
+            parenIndex < 0 -> spaceIndex
+            spaceIndex < 0 -> parenIndex
+            else -> minOf(parenIndex, spaceIndex)
+        }
+        return text.substring(0, endIndex).trim().takeIf { it.isNotEmpty() }
     }
 
     /**
      * 判断字符串字面量是否在 namespace 相关的上下文中。
      *
-     * 检查两种场景:
-     * 1. #[dao(namespace = "...")] 中的值
-     * 2. const NAMESPACE: &str = "..."; 中的值（常量定义）
+     * 向上遍历祖先链，检查是否有 RsMetaItem 且其文本包含 "namespace"。
      */
-    private fun isNamespaceContext(litExpr: RsLitExpr): Boolean {
-        // 场景1: 父级属性中包含 "namespace"
-        val metaItem = findAncestorOfType<RsMetaItem>(litExpr)
-        if (metaItem != null) {
-            val metaName = metaItem.path?.referenceName
-            // dao 属性的 namespace 参数
-            if (metaName == "dao") {
-                // 检查 meta item 的参数文本中是否包含 "namespace"
-                val argsText = metaItem.metaItemArgs?.text ?: ""
-                if (argsText.contains("namespace")) {
+    private fun isNamespaceContext(element: PsiElement): Boolean {
+        var current: PsiElement? = element.parent
+        var depth = 0
+        while (current != null && depth < 15) {
+            val name = current::class.simpleName
+            when (name) {
+                RS_META_ITEM -> {
+                    val metaText = current.text
+                    // 检查 meta item 的名称是否是 dao/mapper/hirust_mapper
+                    // 且参数中包含 namespace
+                    if (metaText.startsWith("dao") && metaText.contains("namespace")) {
+                        return true
+                    }
+                    if (metaText.startsWith("mapper") && metaText.contains("namespace")) {
+                        return true
+                    }
+                }
+                // const 声明: const NAMESPACE: &str = "...";
+                "RsConstant" -> {
+                    // 检查变量名是否包含 "namespace"
+                    val firstChild = current.firstChild
+                    if (firstChild != null && firstChild.text.contains("namespace", ignoreCase = true)) {
+                        return true
+                    }
+                }
+                // 函数调用参数: session.select_list(NAMESPACE, ...)
+                "RsCallExpr", "RsMethodCall" -> {
                     return true
                 }
             }
-            // 其他可能包含 namespace 的属性
-            if (metaName in listOf("mapper", "hirust_mapper")) {
-                val argsText = metaItem.metaItemArgs?.text ?: ""
-                if (argsText.contains("namespace")) {
-                    return true
-                }
-            }
+            current = current.parent
+            depth++
         }
-
-        // 场景2: const 声明中变量名包含 "namespace" 或 "NAMESPACE"
-        val constItem = findAncestorOfType<RsConstant>(litExpr)
-        if (constItem != null) {
-            val constName = constItem.name
-            if (constName.equals("NAMESPACE", ignoreCase = true) ||
-                constName.contains("namespace", ignoreCase = true)
-            ) {
-                return true
-            }
-        }
-
-        // 场景3: 函数调用参数中传递了 namespace 值
-        // 例如 session.select_list::<T>(NAMESPACE, "query_id", &params)
-        // 这里对任意包含 "::" 的字符串都尝试跳转（宽松策略）
-        val fnCall = findAncestorOfType<RsCallExpr>(litExpr)
-        if (fnCall != null) {
-            // 函数调用中的字符串参数 — 如果包含 :: 就尝试
-            return true
-        }
-
         return false
     }
 
     /**
-     * 向上查找指定类型的祖先 PSI 节点
+     * 检查祖先链中是否存在指定名称类型的 PSI 节点。
      */
-    private inline fun <reified T : PsiElement> findAncestorOfType(element: PsiElement): T? {
+    private fun hasAncestorNamed(element: PsiElement, typeName: String): Boolean {
         var current: PsiElement? = element.parent
-        val maxDepth = 15
         var depth = 0
-        while (current != null && depth < maxDepth) {
-            if (current is T) return current
+        while (current != null && depth < 10) {
+            if (current::class.simpleName == typeName) return true
             current = current.parent
             depth++
         }
-        return null
+        return false
     }
 
-    private fun noReferences(): Array<PsiReference> = PsiReference.EMPTY_ARRAY
-
-    companion object {
-        private const val TAG = "[hirust-mapper-navigator]"
+    /**
+     * 尝试找到 RsMetaItem 中的标识符子节点。
+     * 标识符通常是第一个子元素，用于精确高亮和导航。
+     */
+    private fun findIdentifierChild(element: PsiElement): PsiElement? {
+        for (child in element.children) {
+            val name = child::class.simpleName ?: continue
+            if (name.contains("Ident") || name.contains("Path")) {
+                return child.firstChild ?: child
+            }
+        }
+        return null
     }
 }
