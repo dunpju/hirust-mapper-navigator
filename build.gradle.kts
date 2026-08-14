@@ -1,6 +1,6 @@
 plugins {
     id("java")
-    id("org.jetbrains.intellij.platform") version "2.2.1"
+    id("org.jetbrains.intellij") version "1.17.4"
     id("org.jetbrains.kotlin.jvm") version "1.9.24"
 }
 
@@ -9,22 +9,20 @@ version = "1.0.0"
 
 repositories {
     mavenCentral()
-    intellijPlatform {
-        defaultRepositories()
-    }
 }
 
-dependencies {
-    intellijPlatform {
-        // CL (CLion) = RustRover 的基础 platform
-        create("CL", "2024.2.1")
+// RustRover 基于 CLion，使用 CLion 的 build number 作为 intellij version
+// CL 2024.2.1 对应 RustRover 2024.2.x / 2026.x 系列
+val clionVersion = "2024.2.1"
 
-        // Rust 语言插件 — 提供 RsOuterAttr, RsMetaItem, RsLitExpr 等 PSI 类型
-        plugin("org.rust.lang")
+intellij {
+    type.set("CL")
+    version.set(clionVersion)
+    pluginName.set("hirust-mapper-navigator")
+    downloadSources.set(false)
 
-        // 插件开发所需的 instrumentation 依赖
-        intellijPlatformInstrumentation()
-    }
+    // 依赖 Rust 语言插件（intellij-rust），提供 RsOuterAttr, RsMetaItem 等 PSI 类型
+    plugins.set(listOf("org.rust.lang"))
 }
 
 kotlin {
