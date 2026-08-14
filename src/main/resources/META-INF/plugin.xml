@@ -14,9 +14,9 @@
     <vendor email="dengpju@hirust.com" url="https://hirust.com">hirust</vendor>
     <version>1.0.0</version>
 
-    <!-- 依赖 RustRover 的 Rust 语言支持 -->
     <depends>com.intellij.modules.platform</depends>
-    <depends>org.rust.lang</depends>
+    <!-- 可选依赖: RustRover 自带，IDEA 中不可用时插件仍可加载 -->
+    <depends optional="true">org.rust.lang</depends>
 
     <extensions defaultExtensionNs="com.intellij">
         <!--
