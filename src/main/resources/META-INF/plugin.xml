@@ -1,0 +1,42 @@
+<idea-plugin>
+    <id>com.hirust.mapper.navigator</id>
+    <name>Hirust Mapper Navigator</name>
+    <description>
+        <![CDATA[
+        为 hirust-mapper MyBatis 风格 ORM 提供自定义导航支持：<br/>
+        <ul>
+            <li><b>Ctrl+Click 宏名称</b>：#[mapper_query]、#[dao] 等属性宏 → 跳转到 proc macro 定义源码</li>
+            <li><b>Ctrl+Click namespace 字符串</b>：#[dao(namespace = "...")] 中的字符串 → 跳转到对应的 XML 映射文件</li>
+        </ul>
+        XML 资源目录自动从 <code>.with_mapper_paths()</code> 配置中提取。
+        ]]>
+    </description>
+    <vendor email="dengpju@hirust.com" url="https://hirust.com">hirust</vendor>
+    <version>1.0.0</version>
+
+    <!-- 依赖 RustRover 的 Rust 语言支持 -->
+    <depends>com.intellij.modules.platform</depends>
+    <depends>org.rust.lang</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <!--
+            ReferenceContributor: 注册自定义 Ctrl+Click 跳转。
+            language="Rust" 表示仅在 Rust PSI 元素上生效。
+        -->
+        <referenceContributor
+            implementation="com.hirust.mapper.navigation.MacroAttributeReferenceContributor"
+            language="Rust"/>
+
+        <!-- 项目级服务：XML namespace 索引缓存 -->
+        <projectService
+            serviceImplementation="com.hirust.mapper.navigation.XmlNamespaceIndex"/>
+
+        <!-- 项目级服务：扫描 with_mapper_paths 配置 -->
+        <projectService
+            serviceImplementation="com.hirust.mapper.navigation.MapperPathsConfig"/>
+
+        <!-- PSI 变更监听：XML 文件增删时自动刷新索引 -->
+        <psiTreeChangeListener
+            implementation="com.hirust.mapper.navigation.XmlIndexRefreshListener"/>
+    </extensions>
+</idea-plugin>
