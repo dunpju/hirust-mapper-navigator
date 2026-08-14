@@ -23,7 +23,7 @@ dependencies {
         plugin("org.rust.lang")
 
         // 插件开发所需的 instrumentation 依赖
-        instrumentation()
+        intellijPlatformInstrumentation()
     }
 }
 
