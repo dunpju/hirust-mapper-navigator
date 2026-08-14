@@ -24,7 +24,7 @@ class MapperPathsConfig(private val project: Project) {
         val scope = GlobalSearchScope.projectScope(project)
         val psiManager = PsiManager.getInstance(project)
 
-        val virtualFiles = FilenameIndex.getVirtualFilesByName(".rs", scope, project)
+        val virtualFiles = FilenameIndex.getVirtualFilesByName(project, ".rs", scope)
         for (vf in virtualFiles) {
             val psiFile = psiManager.findFile(vf) ?: continue
             extractPatternsFromFile(psiFile)

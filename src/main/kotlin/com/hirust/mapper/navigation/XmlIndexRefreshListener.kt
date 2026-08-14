@@ -4,12 +4,12 @@ import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.vfs.newvfs.BulkFileListener
+import com.intellij.openapi.vfs.newvfs.events.VFileContentChangeEvent
+import com.intellij.openapi.vfs.newvfs.events.VFileCreateEvent
+import com.intellij.openapi.vfs.newvfs.events.VFileDeleteEvent
 import com.intellij.openapi.vfs.newvfs.events.VFileEvent
+import com.intellij.openapi.vfs.newvfs.events.VFilePropertyChangeEvent
 
-/**
- * 监听 VirtualFile 变更事件，当 XML 文件被修改/新增/删除时
- * 自动刷新 XmlNamespaceIndex 索引。
- */
 class XmlIndexRefreshListener(private val project: Project) : BulkFileListener {
 
     private val log = Logger.getInstance(XmlIndexRefreshListener::class.java)
@@ -21,13 +21,26 @@ class XmlIndexRefreshListener(private val project: Project) : BulkFileListener {
         for (event in events) {
             val file = event.file ?: continue
 
-            if (isRelevantFile(file)) {
-                if (event.isCreated || event.isDeleted || event.isContentChange) {
-                    log.info("[hirust-mapper-navigator] XML file changed: ${file.path}")
+            if (!isRelevantFile(file)) continue
+
+            when (event) {
+                is VFileCreateEvent -> {
+                    log.info("[hirust-mapper-navigator] XML created: ${file.path}")
                     index.refreshFile(file)
                 }
-                if (event.isPropertyChange) {
-                    needsRebuild = true
+                is VFileDeleteEvent -> {
+                    log.info("[hirust-mapper-navigator] XML deleted: ${file.path}")
+                    index.refreshFile(file)
+                }
+                is VFileContentChangeEvent -> {
+                    log.info("[hirust-mapper-navigator] XML changed: ${file.path}")
+                    index.refreshFile(file)
+                }
+                is VFilePropertyChangeEvent -> {
+                    if (event.propertyName == VirtualFile.PROP_NAME) {
+                        log.info("[hirust-mapper-navigator] XML renamed: ${file.path}")
+                        needsRebuild = true
+                    }
                 }
             }
         }

@@ -54,7 +54,8 @@ class XmlNamespaceIndex(private val project: Project) {
         if (patterns.isEmpty()) {
             log.warn("[hirust-mapper-navigator] No with_mapper_paths found, using default: resources/mapper/")
             val baseDir = project.baseDir ?: return emptyList()
-            return collectFromDirectory(baseDir, "resources/mapper")
+            val mapperDir = baseDir.findFileByRelativePath("resources/mapper") ?: return emptyList()
+            return collectFromDirectory(mapperDir)
         }
 
         val allFiles = mutableListOf<VirtualFile>()
