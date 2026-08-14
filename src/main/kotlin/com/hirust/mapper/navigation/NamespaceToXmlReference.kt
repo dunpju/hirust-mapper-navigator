@@ -5,30 +5,20 @@ import com.intellij.codeInsight.lookup.LookupElementBuilder
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiManager
 import com.intellij.psi.PsiReferenceBase
 
-/**
- * namespace 字符串到 XML 文件的引用。
- *
- * 使用通用 PsiElement API，编译时不依赖 org.rust.lang 插件。
- *
- * 当用户在 #[dao(namespace = "crate::app::dao::privilege_project_dao")] 中
- * Ctrl+Click namespace 字符串值时，跳转到对应的 XML 文件。
- */
 class NamespaceToXmlReference(element: PsiElement) :
     PsiReferenceBase<PsiElement>(element, getTextRange(element)) {
 
     private val log = Logger.getInstance(NamespaceToXmlReference::class.java)
-
-    /** 缓存的 namespace 字符串值 */
     private val namespaceText: String? = extractNamespaceText(element)
 
     override fun resolve(): PsiElement? {
         val ns = namespaceText ?: return null
         if (!NamespacePathResolver.isValidNamespace(ns)) return null
-
         val xmlFile = NamespacePathResolver.resolve(element.project, ns) ?: return null
-        return com.intellij.psi.PsiManager.getInstance(element.project).findFile(xmlFile)
+        return PsiManager.getInstance(element.project).findFile(xmlFile)
     }
 
     override fun getVariants(): Array<LookupElement> {
@@ -37,7 +27,8 @@ class NamespaceToXmlReference(element: PsiElement) :
             .map { ns ->
                 val xmlFile = index.getXmlFileByNamespace(ns)
                 val filePath = xmlFile?.path ?: "unknown"
-                LookupElementBuilder.create(ns)
+                LookupElementBuilder
+                    .create(ns as Any)
                     .withTypeText(filePath.substringAfterLast("/"))
                     .withTailText(" ($filePath)", true)
             }
@@ -45,7 +36,6 @@ class NamespaceToXmlReference(element: PsiElement) :
     }
 
     companion object {
-        /** 从字符串字面量 PsiElement 中提取字符串值（去除引号） */
         fun extractNamespaceText(element: PsiElement): String? {
             val text = element.text
             if (text.startsWith("\"") && text.endsWith("\"")) {
@@ -54,44 +44,30 @@ class NamespaceToXmlReference(element: PsiElement) :
             return null
         }
 
-        /** 计算引用的文本范围（仅高亮字符串内容部分，不包括引号） */
         fun getTextRange(element: PsiElement): TextRange {
             val text = element.text
             if (text.startsWith("\"") && text.endsWith("\"") && text.length >= 2) {
-                val offsetInElement = element.textRange.startOffset
-                return TextRange(offsetInElement + 1, offsetInElement + text.length - 1)
+                val offset = element.textRange.startOffset
+                return TextRange(offset + 1, offset + text.length - 1)
             }
             return element.textRange
         }
 
-        /**
-         * 判断 PsiElement 是否适合创建 NamespaceToXmlReference。
-         *
-         * 条件:
-         * 1. PSI 类型名为 RsLitExpr
-         * 2. 文本以 " 开头结尾
-         * 3. 值包含 "::"（Rust 路径格式）
-         * 4. 祖先链中存在包含 "namespace" 的上下文
-         */
         fun canCreateFor(element: PsiElement): Boolean {
             if (element::class.simpleName != "RsLitExpr") return false
-
             val text = element.text
             if (!text.startsWith("\"") || !text.endsWith("\"")) return false
             val value = text.substring(1, text.length - 1)
             if (!value.contains("::")) return false
-
             return hasNamespaceAncestor(element)
         }
 
-        /** 检查祖先链中是否包含 "namespace" 关键字 */
         private fun hasNamespaceAncestor(element: PsiElement): Boolean {
             var current: PsiElement? = element.parent
             var depth = 0
             while (current != null && depth < 10) {
                 if (current.text.contains("namespace")) {
-                    val children = current.children
-                    for (child in children) {
+                    for (child in current.children) {
                         if (child.text == "namespace") return true
                     }
                 }

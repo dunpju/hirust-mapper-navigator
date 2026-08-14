@@ -35,8 +35,8 @@
         <projectService
             serviceImplementation="com.hirust.mapper.navigation.MapperPathsConfig"/>
 
-        <!-- PSI 变更监听：XML 文件增删时自动刷新索引 -->
-        <psiTreeChangeListener
+        <!-- VFS 文件变更监听：XML 文件增删时自动刷新索引 -->
+        <fileListener
             implementation="com.hirust.mapper.navigation.XmlIndexRefreshListener"/>
     </extensions>
 </idea-plugin>
