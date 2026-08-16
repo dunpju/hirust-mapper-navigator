@@ -1,6 +1,6 @@
 plugins {
     id("java")
-    id("org.jetbrains.intellij") version "1.17.4"
+    id("org.jetbrains.intellij.platform") version "2.2.1"
     id("org.jetbrains.kotlin.jvm") version "1.9.24"
 }
 
@@ -9,21 +9,15 @@ version = "1.0.0"
 
 repositories {
     mavenCentral()
+    intellijPlatform {
+        defaultRepositories()
+    }
 }
 
-/*
- * 使用 IntelliJ IDEA Community 作为 base IDE（CI 环境总是可用）。
- *
- * 编译时不依赖 org.rust.lang 插件（它仅随 RustRover 捆绑发行），
- * plugin.xml 中通过 <depends>org.rust.lang</depends> 声明运行时依赖。
- * Kotlin 代码使用通用 PsiElement API + 运行时类型名检查，
- * 不直接引用 RsOuterAttr / RsMetaItem 等 Rust PSI 类型。
- */
-intellij {
-    type.set("IC")
-    version.set("2024.2.2")
-    pluginName.set("hirust-mapper-navigator")
-    downloadSources.set(false)
+dependencies {
+    intellijPlatform {
+        intellijIdeaCommunity("2024.2.2")
+    }
 }
 
 kotlin {
