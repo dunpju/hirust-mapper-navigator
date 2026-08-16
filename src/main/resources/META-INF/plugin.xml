@@ -18,8 +18,7 @@
 
     <extensions defaultExtensionNs="com.intellij">
         <referenceContributor
-            implementation="com.hirust.mapper.navigation.MacroAttributeReferenceContributor"
-            language="Rust"/>
+            implementation="com.hirust.mapper.navigation.MacroAttributeReferenceContributor"/>
 
         <projectService
             serviceImplementation="com.hirust.mapper.navigation.XmlNamespaceIndex"/>
