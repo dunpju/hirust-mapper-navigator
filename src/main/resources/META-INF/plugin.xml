@@ -17,15 +17,17 @@
     <depends>com.intellij.modules.platform</depends>
 
     <extensions defaultExtensionNs="com.intellij">
-        <referenceContributor
-            implementation="com.hirust.mapper.navigation.MacroAttributeReferenceContributor"/>
+        <!-- 启动时注册 ImplicitReferenceProvider（比 PsiReferenceContributor 更可靠） -->
+        <postStartupActivity
+            implementation="com.hirust.mapper.navigation.PluginStartup"/>
 
+        <!-- 项目级服务 -->
         <projectService
             serviceImplementation="com.hirust.mapper.navigation.XmlNamespaceIndex"/>
-
         <projectService
             serviceImplementation="com.hirust.mapper.navigation.MapperPathsConfig"/>
 
+        <!-- VFS 文件变更监听 -->
         <fileListener
             implementation="com.hirust.mapper.navigation.XmlIndexRefreshListener"/>
     </extensions>
