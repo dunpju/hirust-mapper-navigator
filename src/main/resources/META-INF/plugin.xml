@@ -15,27 +15,18 @@
     <version>1.0.0</version>
 
     <depends>com.intellij.modules.platform</depends>
-    <!-- 可选依赖: RustRover 自带，IDEA 中不可用时插件仍可加载 -->
-    <depends optional="true">org.rust.lang</depends>
 
     <extensions defaultExtensionNs="com.intellij">
-        <!--
-            ReferenceContributor: 注册自定义 Ctrl+Click 跳转。
-            language="Rust" 表示仅在 Rust PSI 元素上生效。
-        -->
         <referenceContributor
             implementation="com.hirust.mapper.navigation.MacroAttributeReferenceContributor"
             language="Rust"/>
 
-        <!-- 项目级服务：XML namespace 索引缓存 -->
         <projectService
             serviceImplementation="com.hirust.mapper.navigation.XmlNamespaceIndex"/>
 
-        <!-- 项目级服务：扫描 with_mapper_paths 配置 -->
         <projectService
             serviceImplementation="com.hirust.mapper.navigation.MapperPathsConfig"/>
 
-        <!-- VFS 文件变更监听：XML 文件增删时自动刷新索引 -->
         <fileListener
             implementation="com.hirust.mapper.navigation.XmlIndexRefreshListener"/>
     </extensions>
