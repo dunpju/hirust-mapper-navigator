@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "com.hirust"
-version = "1.0.0"
+version = "1.1.0"
 
 repositories {
     mavenCentral()
@@ -18,6 +18,7 @@ dependencies {
     intellijPlatform {
         intellijIdeaCommunity("2024.2.2")
     }
+    testImplementation("junit:junit:4.13.2")
 }
 
 kotlin {

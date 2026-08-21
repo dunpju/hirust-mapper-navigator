@@ -373,35 +373,41 @@ class RustLineMarkerProvider : LineMarkerProvider {
 
 ## 八、实施步骤(按顺序执行)
 
-### 阶段 1:纯文本解析层 + 单元测试
-1. 新建 `src/main/kotlin/com/hirust/mapper/navigation/RustSourceParser.kt`
-2. 新建 `src/main/kotlin/com/hirust/mapper/navigation/XmlMapperParser.kt`
-3. 新建 `src/test/kotlin/com/hirust/mapper/navigation/RustSourceParserTest.kt`
+> 执行进度:2026-08-21 阶段 1~4 与阶段 5 的 plugin.xml/版本/sample 已完成 ✅,README 与构建验证进行中。
+
+### 阶段 1:纯文本解析层 + 单元测试 ✅
+1. [x] 新建 `src/main/kotlin/com/hirust/mapper/navigation/RustSourceParser.kt`
+2. [x] 新建 `src/main/kotlin/com/hirust/mapper/navigation/XmlMapperParser.kt`
+3. [x] 新建 `src/test/kotlin/com/hirust/mapper/navigation/RustSourceParserTest.kt`
    - 用例:带 id 的方法、不带 id 的方法、多个 DAO、嵌套括号 namespace、未知 mapper_* 宏、非 DAO 文件返回空
-4. 新建 `src/test/kotlin/com/hirust/mapper/navigation/XmlMapperParserTest.kt`
+4. [x] 新建 `src/test/kotlin/com/hirust/mapper/navigation/XmlMapperParserTest.kt`
    - 用例:标准 mapper、多语句、无 namespace、自闭合语句、多行属性
-5. `build.gradle.kts` 增加测试依赖(`testImplementation(kotlin("test"))` + junit5 或 kotlin.test+junit4,与 Kotlin 1.9.24 兼容)
+5. [x] `build.gradle.kts` 增加测试依赖(采用 junit:junit:4.13.2)
 
-### 阶段 2:索引层
-6. 新建 `RustDaoIndex.kt`(按 §5.1)
-7. 扩展 `XmlNamespaceIndex.kt`:接入 `XmlMapperParser`,新增语句级查询(按 §5.2)
-8. 扩展 `XmlIndexRefreshListener.kt`:.rs 变更刷新 `RustDaoIndex`(按 §5.3)
+### 阶段 2:索引层 ✅
+6. [x] 新建 `RustDaoIndex.kt`(按 §5.1)
+7. [x] 扩展 `XmlNamespaceIndex.kt`:接入 `XmlMapperParser`,新增语句级查询(按 §5.2)
+8. [x] 扩展 `XmlIndexRefreshListener.kt`:.rs 变更刷新 `RustDaoIndex`(按 §5.3)
 
-### 阶段 3:XML → Rust 方向
-9. 新建 `NavigationUtil.kt`(按 §6.1)
-10. 新建 `XmlMapperReferenceContributor.kt` + 两个 Reference 类(按 §6.2)
-11. 新建 `XmlMapperLineMarkerProvider.kt`(按 §6.4)
-12. 新建 `Icons.kt` + 两个 SVG 图标(按 §6.6)
+### 阶段 3:XML → Rust 方向 ✅
+9. [x] 新建 `NavigationUtil.kt`(按 §6.1)
+10. [x] 新建 `XmlMapperReferenceContributor.kt` + 两个 Reference 类(按 §6.2)
+11. [x] 新建 `XmlMapperLineMarkerProvider.kt`(按 §6.4)
+12. [x] 新建 `Icons.kt` + SVG 图标(toXml/toRust/pluginIcon,按 §6.6)
 
-### 阶段 4:Rust → XML 方向
-13. 新建 `RustReferenceContributor.kt`(按 §6.3,恢复宏名/namespace 引用注册 + 新增 id 引用)
-14. 增强 `NamespaceToXmlReference`(落点到 `<mapper>` 标签)
-15. 新建 `RustLineMarkerProvider.kt`(按 §6.5)
+### 阶段 4:Rust → XML 方向 ✅
+13. [x] 新建 `RustReferenceContributor.kt`(按 §6.3,恢复宏名/namespace 引用注册 + 新增 id 引用;额外修复了原 NamespaceToXmlReference 的 rangeInElement 绝对/相对偏移 bug)
+14. [x] 增强 `NamespaceToXmlReference`(落点到 `<mapper>` 标签)
+15. [x] 新建 `RustLineMarkerProvider.kt`(按 §6.5)
 
 ### 阶段 5:装配与文档
-16. 重写 `plugin.xml`(按 §7,删除坏的 postStartupActivity)
-17. 更新 `README.md`:功能说明(双向跳转、行标记)、截图位、结构图、"后续计划"勾选已完成项
-18. 更新 `plugin.xml` 的 `<description>` 与版本号(建议升到 1.1.0)
+16. [x] 重写 `plugin.xml`(按 §7,删除坏的 postStartupActivity;描述与图标已更新)
+17. [ ] 更新 `README.md`:功能说明(双向跳转、行标记)、截图位、结构图、"后续计划"勾选已完成项
+18. [x] 更新 `plugin.xml` 的 `<description>` 与版本号(已升到 1.1.0,build.gradle.kts 同步)
+19. [x] 新建 `sample/` 手动验证样例工程(Cargo.toml、main.rs 含 with_mapper_paths、DAO、XML)
+20. [ ] 运行 `gradle test` 全部通过
+21. [ ] 运行 `gradle buildPlugin` 产出 zip
+22. [ ] 修复 gradle wrapper(`.gitignore` 的 `*.jar` 排除了 `gradle-wrapper.jar`,需加回排除例外并重新生成,否则其他机器无法构建)
 
 ---
 

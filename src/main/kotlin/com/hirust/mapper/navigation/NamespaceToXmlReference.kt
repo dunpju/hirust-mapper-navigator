@@ -8,17 +8,37 @@ import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiManager
 import com.intellij.psi.PsiReferenceBase
 
-class NamespaceToXmlReference(element: PsiElement) :
-    PsiReferenceBase<PsiElement>(element, getTextRange(element)) {
+/**
+ * namespace 字符串引用:Ctrl+Click `#[dao(namespace = "...")]` 中的字符串,
+ * 跳转到对应 XML 映射文件的 `<mapper>` 标签。
+ *
+ * 支持两种宿主元素:
+ * - Rust PSI 字符串字面量(RustRover):rangeInElement 为 null,引用覆盖整个元素
+ * - 纯文本单叶(无 Rust 插件的 IDE):rangeInElement 指向字面量引号内的子区间
+ */
+class NamespaceToXmlReference(
+    element: PsiElement,
+    rangeInElement: TextRange? = null,
+    nsOverride: String? = null
+) : PsiReferenceBase<PsiElement>(element, rangeInElement ?: TextRange(0, element.textLength)) {
 
     private val log = Logger.getInstance(NamespaceToXmlReference::class.java)
-    private val namespaceText: String? = extractNamespaceText(element)
+    private val namespaceText: String? = nsOverride ?: extractNamespaceText(element)
 
     override fun resolve(): PsiElement? {
         val ns = namespaceText ?: return null
         if (!NamespacePathResolver.isValidNamespace(ns)) return null
-        val xmlFile = NamespacePathResolver.resolve(element.project, ns) ?: return null
-        return PsiManager.getInstance(element.project).findFile(xmlFile)
+        val project = element.project
+        val xmlFile = NamespacePathResolver.resolve(project, ns) ?: return null
+        val psiFile = PsiManager.getInstance(project).findFile(xmlFile) ?: return null
+
+        // 优先落点到 <mapper> 标签;无索引信息时退化为文件
+        val info = XmlNamespaceIndex.getInstance(project).getMapperInfo(xmlFile)
+        if (info != null) {
+            return psiFile.findElementAt(info.mapperTagOffset) ?: psiFile
+        }
+        log.debug("[hirust-mapper-navigator] No mapper info for ${xmlFile.path}, fallback to file")
+        return psiFile
     }
 
     override fun getVariants(): Array<LookupElement> {
@@ -38,44 +58,10 @@ class NamespaceToXmlReference(element: PsiElement) :
     companion object {
         fun extractNamespaceText(element: PsiElement): String? {
             val text = element.text
-            if (text.startsWith("\"") && text.endsWith("\"")) {
+            if (text.length >= 2 && text.startsWith("\"") && text.endsWith("\"")) {
                 return text.substring(1, text.length - 1)
             }
             return null
-        }
-
-        fun getTextRange(element: PsiElement): TextRange {
-            val text = element.text
-            if (text.startsWith("\"") && text.endsWith("\"") && text.length >= 2) {
-                val offset = element.textRange.startOffset
-                return TextRange(offset + 1, offset + text.length - 1)
-            }
-            return element.textRange
-        }
-
-        fun canCreateFor(element: PsiElement): Boolean {
-            if (element::class.simpleName != "RsLitExpr") return false
-            val text = element.text
-            if (!text.startsWith("\"") || !text.endsWith("\"")) return false
-            val value = text.substring(1, text.length - 1)
-            if (!value.contains("::")) return false
-            return hasNamespaceAncestor(element)
-        }
-
-        private fun hasNamespaceAncestor(element: PsiElement): Boolean {
-            var current: PsiElement? = element.parent
-            var depth = 0
-            while (current != null && depth < 10) {
-                if (current.text.contains("namespace")) {
-                    for (child in current.children) {
-                        if (child.text == "namespace") return true
-                    }
-                }
-                current = current.parent
-                depth++
-            }
-            val parentText = element.parent?.parent?.text ?: return false
-            return parentText.contains("namespace")
         }
     }
 }

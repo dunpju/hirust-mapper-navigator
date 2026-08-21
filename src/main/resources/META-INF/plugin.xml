@@ -3,31 +3,57 @@
     <name>Hirust Mapper Navigator</name>
     <description>
         <![CDATA[
-        为 hirust-mapper MyBatis 风格 ORM 提供自定义导航支持：<br/>
+        为 hirust-mapper MyBatis 风格 ORM 提供 MybatisX 风格的双向导航支持:<br/>
         <ul>
-            <li><b>Ctrl+Click 宏名称</b>：#[mapper_query]、#[dao] 等属性宏 → 跳转到 proc macro 定义源码</li>
-            <li><b>Ctrl+Click namespace 字符串</b>：#[dao(namespace = "...")] 中的字符串 → 跳转到对应的 XML 映射文件</li>
+            <li><b>XML → Rust</b>:Ctrl+Click 或行标记图标
+                <code>&lt;mapper namespace="..."/&gt;</code> → Rust DAO;
+                <code>&lt;select id="..."/&gt;</code> 语句 id → 对应 <code>#[mapper_*]</code> 方法</li>
+            <li><b>Rust → XML</b>:Ctrl+Click 或行标记图标
+                <code>#[dao(namespace = "...")]</code> → XML mapper 文件;
+                <code>#[mapper_query(id = "...")]</code> → 对应 XML 语句</li>
+            <li><b>宏定义跳转</b>:Ctrl+Click 宏名称(mapper_query / dao 等)→ proc macro 定义源码</li>
         </ul>
-        XML 资源目录自动从 <code>.with_mapper_paths()</code> 配置中提取。
+        XML 资源目录自动从 <code>.with_mapper_paths()</code> 配置中提取。<br/>
+        在 RustRover 中可获得完整体验(含 Rust 侧行标记图标);
+        其他 IDE 中 .rs 以纯文本方式提供 Ctrl+Click 引用。
         ]]>
     </description>
     <vendor email="dengpju@hirust.com" url="https://hirust.com">hirust</vendor>
-    <version>1.0.0</version>
+    <version>1.1.0</version>
+    <icon>icons/pluginIcon.svg</icon>
 
     <depends>com.intellij.modules.platform</depends>
 
     <extensions defaultExtensionNs="com.intellij">
-        <!-- 启动时注册 ImplicitReferenceProvider（比 PsiReferenceContributor 更可靠） -->
-        <postStartupActivity
-            implementation="com.hirust.mapper.navigation.PluginStartup"/>
+        <!-- 引用贡献:XML 侧(namespace/语句 id 属性值 Ctrl+Click) -->
+        <psi.referenceContributor language="XML"
+            implementation="com.hirust.mapper.navigation.XmlMapperReferenceContributor"/>
+
+        <!-- 引用贡献:Rust 侧(RustRover 中作用于字符串字面量与宏名标识符) -->
+        <psi.referenceContributor language="RUST"
+            implementation="com.hirust.mapper.navigation.RustReferenceContributor"/>
+
+        <!-- 引用贡献:纯文本兜底(无 Rust 插件的 IDE 中 .rs 为 TEXT) -->
+        <psi.referenceContributor language="TEXT"
+            implementation="com.hirust.mapper.navigation.RustReferenceContributor"/>
+
+        <!-- 行标记:XML 侧 gutter 图标(mapper 标签与语句标签) -->
+        <codeInsight.lineMarkerProvider language="XML"
+            implementationClass="com.hirust.mapper.navigation.XmlMapperLineMarkerProvider"/>
+
+        <!-- 行标记:Rust 侧 gutter 图标(仅 Rust PSI 存在的环境生效) -->
+        <codeInsight.lineMarkerProvider language="RUST"
+            implementationClass="com.hirust.mapper.navigation.RustLineMarkerProvider"/>
 
         <!-- 项目级服务 -->
         <projectService
             serviceImplementation="com.hirust.mapper.navigation.XmlNamespaceIndex"/>
         <projectService
             serviceImplementation="com.hirust.mapper.navigation.MapperPathsConfig"/>
+        <projectService
+            serviceImplementation="com.hirust.mapper.navigation.RustDaoIndex"/>
 
-        <!-- VFS 文件变更监听 -->
+        <!-- VFS 文件变更监听(XML 与 .rs 双侧索引刷新) -->
         <fileListener
             implementation="com.hirust.mapper.navigation.XmlIndexRefreshListener"/>
     </extensions>

@@ -11,8 +11,9 @@ import java.util.concurrent.CopyOnWriteArrayList
  * XML namespace 索引服务。
  *
  * 扫描由 with_mapper_paths 配置指定的 XML 文件，
- * 解析每个 XML 的 <mapper namespace="..."> 属性，
- * 建立 namespace 字符串到 VirtualFile 的双向映射。
+ * 解析每个 XML 的 <mapper namespace="..."> 属性与语句标签
+ * (select/insert/update/delete 的 id)，
+ * 建立 namespace 字符串到 VirtualFile 的双向映射及语句级索引。
  */
 class XmlNamespaceIndex(private val project: Project) {
 
@@ -24,8 +25,18 @@ class XmlNamespaceIndex(private val project: Project) {
     /** stem（去除后缀的模块名）-> XML VirtualFile */
     private val stemToFile = ConcurrentHashMap<String, VirtualFile>()
 
+    /** XML VirtualFile -> 解析出的 mapper 信息(含语句列表) */
+    private val mapperInfoByFile = ConcurrentHashMap<VirtualFile, MapperInfo>()
+
     /** 所有已索引的 XML 文件 */
     private val indexedFiles = CopyOnWriteArrayList<VirtualFile>()
+
+    /** 语句定位结果:文件 + 语句 + 实际匹配到的 namespace */
+    data class XmlStatementLocation(
+        val file: VirtualFile,
+        val statement: StatementInfo,
+        val namespace: String
+    )
 
     @Volatile
     private var initialized = false
@@ -35,6 +46,7 @@ class XmlNamespaceIndex(private val project: Project) {
 
         namespaceToFile.clear()
         stemToFile.clear()
+        mapperInfoByFile.clear()
         indexedFiles.clear()
 
         val xmlFiles = collectXmlFiles()
@@ -101,15 +113,16 @@ class XmlNamespaceIndex(private val project: Project) {
     private fun indexFile(xmlFile: VirtualFile) {
         try {
             val content = VfsUtil.loadText(xmlFile)
-            val namespace = extractNamespace(content) ?: run {
+            val info = XmlMapperParser.parse(content) ?: run {
                 log.debug("[hirust-mapper-navigator] No namespace found in ${xmlFile.path}")
                 return
             }
 
             indexedFiles.add(xmlFile)
-            namespaceToFile[namespace] = xmlFile
+            mapperInfoByFile[xmlFile] = info
+            namespaceToFile[info.namespace] = xmlFile
 
-            val stem = extractStem(namespace)
+            val stem = extractStem(info.namespace)
             if (stem != null) {
                 stemToFile[stem] = xmlFile
             }
@@ -118,9 +131,42 @@ class XmlNamespaceIndex(private val project: Project) {
         }
     }
 
-    fun extractNamespace(xmlContent: String): String? {
-        val regex = Regex("""<mapper\s+[^>]*namespace\s*=\s*"([^"]+)"""")
-        return regex.find(xmlContent)?.groupValues?.get(1)
+    fun extractNamespace(xmlContent: String): String? =
+        XmlMapperParser.extractNamespace(xmlContent)
+
+    /** 获取指定 XML 文件的完整解析信息(含语句列表) */
+    fun getMapperInfo(file: VirtualFile): MapperInfo? {
+        ensureInitialized()
+        return mapperInfoByFile[file]
+    }
+
+    /** 获取指定 XML 文件的全部语句 */
+    fun getStatements(file: VirtualFile): List<StatementInfo> =
+        getMapperInfo(file)?.statements ?: emptyList()
+
+    /**
+     * 按 namespace + 语句 id 查找 XML 语句。
+     * 匹配策略与 [NamespacePathResolver] 一致:精确 namespace → stem → 末段。
+     *
+     * @param tag 期望的语句标签(select/insert/update/delete),为 null 时忽略
+     */
+    fun findStatement(namespace: String, id: String, tag: String? = null): XmlStatementLocation? {
+        ensureInitialized()
+        val lastSegment = namespace.substringAfterLast("::")
+        val candidates = sequence {
+            namespaceToFile[namespace]?.let { yield(it) }
+            extractStem(namespace)?.let { stemToFile[it] }?.let { yield(it) }
+            stemToFile[lastSegment]?.let { yield(it) }
+        }.distinct()
+
+        for (file in candidates) {
+            val info = mapperInfoByFile[file] ?: continue
+            val stmt = info.statements.firstOrNull { it.id == id && (tag == null || it.tag == tag) }
+                ?: info.statements.firstOrNull { it.id == id }
+                ?: continue
+            return XmlStatementLocation(file, stmt, info.namespace)
+        }
+        return null
     }
 
     fun extractStem(namespace: String): String? {
@@ -178,6 +224,7 @@ class XmlNamespaceIndex(private val project: Project) {
             .map { it.key }
         oldEntries.forEach { namespaceToFile.remove(it) }
         stemToFile.entries.removeAll { it.value == xmlFile }
+        mapperInfoByFile.remove(xmlFile)
         indexedFiles.remove(xmlFile)
 
         if (xmlFile.isValid && xmlFile.exists()) {

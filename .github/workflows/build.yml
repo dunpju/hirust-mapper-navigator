@@ -29,6 +29,9 @@ jobs:
       - name: Generate Gradle Wrapper
         run: gradle wrapper
 
+      - name: Run Unit Tests
+        run: ./gradlew test
+
       - name: Build Plugin
         run: ./gradlew buildPlugin
 

@@ -1,0 +1,9 @@
+[package]
+name = "hirust-mapper-sample"
+version = "0.1.0"
+edition = "2021"
+
+# 实际项目中 hirust-mapper 以 path 依赖引入,例如:
+# [dependencies]
+# hirust-mapper = { path = "../../hirust-mapper/hirust-mapper" }
+# tokio = { version = "1", features = ["full"] }

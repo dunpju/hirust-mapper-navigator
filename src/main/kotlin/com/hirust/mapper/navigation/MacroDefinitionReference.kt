@@ -2,6 +2,7 @@ package com.hirust.mapper.navigation
 
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.psi.PsiElement
@@ -20,8 +21,9 @@ import com.intellij.psi.PsiReferenceBase
  */
 class MacroDefinitionReference(
     element: PsiElement,
-    private val macroName: String
-) : PsiReferenceBase<PsiElement>(element) {
+    private val macroName: String,
+    rangeInElement: TextRange? = null
+) : PsiReferenceBase<PsiElement>(element, rangeInElement ?: TextRange(0, element.textLength)) {
 
     private val log = Logger.getInstance(MacroDefinitionReference::class.java)
 

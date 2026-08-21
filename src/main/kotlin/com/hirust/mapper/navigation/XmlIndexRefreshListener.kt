@@ -10,48 +10,66 @@ import com.intellij.openapi.vfs.newvfs.events.VFileDeleteEvent
 import com.intellij.openapi.vfs.newvfs.events.VFileEvent
 import com.intellij.openapi.vfs.newvfs.events.VFilePropertyChangeEvent
 
+/**
+ * XML 与 Rust 源码文件变更监听:
+ * - XML 变更 → 刷新 [XmlNamespaceIndex](namespace 与语句索引)
+ * - .rs 变更 → 刷新 [RustDaoIndex](DAO 与方法索引)
+ */
 class XmlIndexRefreshListener(private val project: Project) : BulkFileListener {
 
     private val log = Logger.getInstance(XmlIndexRefreshListener::class.java)
 
     override fun after(events: List<VFileEvent>) {
-        val index = XmlNamespaceIndex.getInstance(project)
-        var needsRebuild = false
+        val xmlIndex = XmlNamespaceIndex.getInstance(project)
+        val rustIndex = RustDaoIndex.getInstance(project)
+        var needsXmlRebuild = false
 
         for (event in events) {
             val file = event.file ?: continue
+            val ext = file.extension?.lowercase()
 
-            if (!isRelevantFile(file)) continue
-
-            when (event) {
-                is VFileCreateEvent -> {
-                    log.info("[hirust-mapper-navigator] XML created: ${file.path}")
-                    index.refreshFile(file)
+            when (ext) {
+                "rs" -> {
+                    when (event) {
+                        is VFileCreateEvent,
+                        is VFileDeleteEvent,
+                        is VFileContentChangeEvent -> rustIndex.refreshFile(file)
+                        is VFilePropertyChangeEvent ->
+                            if (event.propertyName == VirtualFile.PROP_NAME) rustIndex.refreshFile(file)
+                    }
                 }
-                is VFileDeleteEvent -> {
-                    log.info("[hirust-mapper-navigator] XML deleted: ${file.path}")
-                    index.refreshFile(file)
-                }
-                is VFileContentChangeEvent -> {
-                    log.info("[hirust-mapper-navigator] XML changed: ${file.path}")
-                    index.refreshFile(file)
-                }
-                is VFilePropertyChangeEvent -> {
-                    if (event.propertyName == VirtualFile.PROP_NAME) {
-                        log.info("[hirust-mapper-navigator] XML renamed: ${file.path}")
-                        needsRebuild = true
+                "xml" -> {
+                    if (!isRelevantXml(file)) continue
+                    when (event) {
+                        is VFileCreateEvent -> {
+                            log.info("[hirust-mapper-navigator] XML created: ${file.path}")
+                            xmlIndex.refreshFile(file)
+                        }
+                        is VFileDeleteEvent -> {
+                            log.info("[hirust-mapper-navigator] XML deleted: ${file.path}")
+                            xmlIndex.refreshFile(file)
+                        }
+                        is VFileContentChangeEvent -> {
+                            log.info("[hirust-mapper-navigator] XML changed: ${file.path}")
+                            xmlIndex.refreshFile(file)
+                        }
+                        is VFilePropertyChangeEvent -> {
+                            if (event.propertyName == VirtualFile.PROP_NAME) {
+                                log.info("[hirust-mapper-navigator] XML renamed: ${file.path}")
+                                needsXmlRebuild = true
+                            }
+                        }
                     }
                 }
             }
         }
 
-        if (needsRebuild) {
-            index.rebuildIndex()
+        if (needsXmlRebuild) {
+            xmlIndex.rebuildIndex()
         }
     }
 
-    private fun isRelevantFile(file: VirtualFile): Boolean {
-        if (file.extension != "xml") return false
+    private fun isRelevantXml(file: VirtualFile): Boolean {
         val path = file.path.lowercase()
         return path.contains("mapper") || path.contains("resources")
     }

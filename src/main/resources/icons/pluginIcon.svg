@@ -1,0 +1,7 @@
+<svg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+  <!-- 插件图标:双向跳转 -->
+  <rect width="40" height="40" rx="9" fill="#1E6F5C"/>
+  <path d="M14 12 L7 20 L14 28" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M26 12 L33 20 L26 28" fill="none" stroke="#F7A11A" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M10 20 H30" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"/>
+</svg>
