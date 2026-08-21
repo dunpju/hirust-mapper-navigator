@@ -45,18 +45,25 @@ class RustGotoDeclarationHandler : GotoDeclarationHandler {
         val attrName = nameMatch.groupValues[1]
 
         return when {
-            attrName == "dao" && Regex("""\bnamespace\s*=\s*$""").containsMatchIn(between) -> {
+            attrName == "dao" && Regex("""\bnamespace\s*=\s*"?$""").containsMatchIn(between) -> {
                 val xmlIndex = XmlNamespaceIndex.getInstance(project)
                 val xmlFile = xmlIndex.findXmlFile(literal.value) ?: run {
                     log.info("[hirust-mapper-navigator] GotoDecl ns->xml: no xml file for ${literal.value}")
                     return null
                 }
                 val info = xmlIndex.getMapperInfo(xmlFile)
-                val target = NavigationUtil.findElement(xmlFile, project, info?.mapperTagOffset ?: 0)
-                    ?: return null
+                val targetOffset = info?.mapperTagOffset ?: 0
+                val target = NavigationUtil.findElement(xmlFile, project, targetOffset)
+                if (target == null) {
+                    log.info("[hirust-mapper-navigator] GotoDecl ns->xml: findElement null " +
+                            "(file=${xmlFile.path} offset=$targetOffset infoNull=${info == null})")
+                    return null
+                }
+                log.info("[hirust-mapper-navigator] GotoDecl ns->xml TARGET " +
+                        "${xmlFile.name}@$targetOffset elem=${target.javaClass.simpleName}")
                 arrayOf(target)
             }
-            attrName.startsWith("mapper_") && Regex("""\bid\s*=\s*$""").containsMatchIn(between) -> {
+            attrName.startsWith("mapper_") && Regex("""\bid\s*=\s*"?$""").containsMatchIn(between) -> {
                 val loc = RustDaoIndex.getInstance(project).findMethodAt(vFile, literal.start) ?: run {
                     log.info("[hirust-mapper-navigator] GotoDecl id->xml: no method at offset ${literal.start}")
                     return null
@@ -67,13 +74,23 @@ class RustGotoDeclarationHandler : GotoDeclarationHandler {
                             "(ns=${loc.dao.namespace} id=${loc.method.id} tag=${loc.method.stmtTag})")
                     return null
                 }
-                val target = NavigationUtil.findElement(
-                    xmlLoc.file, project,
-                    xmlLoc.statement.idAttrOffset.takeIf { it >= 0 } ?: xmlLoc.statement.tagOffset
-                ) ?: return null
+                val targetOffset = xmlLoc.statement.idAttrOffset.takeIf { it >= 0 }
+                    ?: xmlLoc.statement.tagOffset
+                val target = NavigationUtil.findElement(xmlLoc.file, project, targetOffset)
+                if (target == null) {
+                    log.info("[hirust-mapper-navigator] GotoDecl id->xml: findElement null " +
+                            "(file=${xmlLoc.file.path} offset=$targetOffset)")
+                    return null
+                }
+                log.info("[hirust-mapper-navigator] GotoDecl id->xml TARGET " +
+                        "${xmlLoc.file.name}@$targetOffset elem=${target.javaClass.simpleName}")
                 arrayOf(target)
             }
-            else -> null
+            else -> {
+                log.info("[hirust-mapper-navigator] GotoDecl ignored: attr=$attrName " +
+                        "between='${between.takeLast(40)}'")
+                null
+            }
         }
     }
 

@@ -19,7 +19,7 @@
         ]]>
     </description>
     <vendor email="dengpju@hirust.com" url="https://hirust.com">hirust</vendor>
-    <version>1.1.6</version>
+    <version>1.1.8</version>
     <icon>icons/pluginIcon.svg</icon>
 
     <depends>com.intellij.modules.platform</depends>
@@ -41,10 +41,6 @@
         <codeInsight.lineMarkerProvider language="XML"
             implementationClass="com.hirust.mapper.navigation.XmlMapperLineMarkerProvider"/>
 
-        <!-- 行标记:Rust 侧 gutter 图标(按 PSI 类名探测,仅 Rust PSI 环境实际生效) -->
-        <codeInsight.lineMarkerProvider language="ANY"
-            implementationClass="com.hirust.mapper.navigation.RustLineMarkerProvider"/>
-
         <!-- Rust 侧 Ctrl+Click 跳转(语言无关通道,不受 language 注册限制) -->
         <gotoDeclarationHandler
             implementation="com.hirust.mapper.navigation.RustGotoDeclarationHandler"/>
@@ -64,5 +60,8 @@
     <projectListeners>
         <listener class="com.hirust.mapper.navigation.XmlIndexRefreshListener"
             topic="com.intellij.openapi.vfs.newvfs.BulkFileListener"/>
+        <!-- Rust 侧 gutter 图标:编辑器打开时程序化注册(绕开 language 扩展点) -->
+        <listener class="com.hirust.mapper.navigation.RustGutterManager"
+            topic="com.intellij.openapi.fileEditor.FileEditorManagerListener"/>
     </projectListeners>
 </idea-plugin>
