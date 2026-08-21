@@ -33,11 +33,15 @@ class XmlMapperReferenceContributor : PsiReferenceContributor() {
 
 class XmlMapperReferenceProvider : PsiReferenceProvider() {
 
+    private val log = com.intellij.openapi.diagnostic.Logger.getInstance(XmlMapperReferenceProvider::class.java)
+
     override fun getReferencesByElement(element: PsiElement, context: ProcessingContext): Array<PsiReference> {
         val attrValue = element as? XmlAttributeValue ?: return PsiReference.EMPTY_ARRAY
         val attr = attrValue.parent as? XmlAttribute ?: return PsiReference.EMPTY_ARRAY
         val tag = attr.parent as? XmlTag ?: return PsiReference.EMPTY_ARRAY
         val value = attrValue.value ?: return PsiReference.EMPTY_ARRAY
+        log.info("[hirust-mapper-navigator] XML ref query: @${attr.name} in <${tag.name}> value='$value' " +
+                "file=${element.containingFile.name}")
 
         val ref = when {
             tag.name == "mapper" && attr.name == "namespace" && value.isNotEmpty() ->

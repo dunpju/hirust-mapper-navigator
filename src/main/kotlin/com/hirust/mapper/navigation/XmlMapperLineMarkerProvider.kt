@@ -18,6 +18,8 @@ import java.util.function.Supplier
  */
 class XmlMapperLineMarkerProvider : LineMarkerProvider {
 
+    private val log = com.intellij.openapi.diagnostic.Logger.getInstance(XmlMapperLineMarkerProvider::class.java)
+
     override fun getLineMarkerInfo(element: PsiElement): LineMarkerInfo<*>? {
         // 仅处理叶子上的开始标签名 token:<mapper、<select 等
         if (element !is com.intellij.psi.xml.XmlToken) return null
@@ -26,6 +28,7 @@ class XmlMapperLineMarkerProvider : LineMarkerProvider {
         if (prev !is com.intellij.psi.xml.XmlToken || prev.tokenType != XmlTokenType.XML_START_TAG_START) return null
         val tag = element.parent as? XmlTag ?: return null
         if (element.text != tag.name) return null
+        log.info("[hirust-mapper-navigator] LineMarker on <${tag.name}> in ${element.containingFile.name}")
 
         val project = element.project
         val vFile = element.containingFile.virtualFile ?: return null

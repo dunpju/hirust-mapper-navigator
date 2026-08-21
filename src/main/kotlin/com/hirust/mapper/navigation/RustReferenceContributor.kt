@@ -36,10 +36,13 @@ class RustReferenceContributor : PsiReferenceContributor() {
 
 class RustReferenceProvider : PsiReferenceProvider() {
 
+    private val log = com.intellij.openapi.diagnostic.Logger.getInstance(RustReferenceProvider::class.java)
+
     override fun getReferencesByElement(element: PsiElement, context: ProcessingContext): Array<PsiReference> {
         val containingFile = element.containingFile ?: return PsiReference.EMPTY_ARRAY
         val vFile = containingFile.virtualFile ?: return PsiReference.EMPTY_ARRAY
         if (vFile.extension != "rs") return PsiReference.EMPTY_ARRAY
+        log.info("[hirust-mapper-navigator] Rust ref query: ${element.javaClass.simpleName} in ${vFile.name}")
 
         return when {
             // 场景1:纯文本单叶(无 Rust 插件)—— 按解析结果生成子区间引用
