@@ -61,10 +61,15 @@ class XmlMapperReferenceProvider : PsiReferenceProvider() {
 class XmlNamespaceToDaoReference(element: XmlAttributeValue) :
     PsiReferenceBase<XmlAttributeValue>(element) {
 
+    private val log = com.intellij.openapi.diagnostic.Logger.getInstance(XmlNamespaceToDaoReference::class.java)
+
     override fun resolve(): PsiElement? {
         val ns = element.value ?: return null
         val project = element.project
-        val loc = RustDaoIndex.getInstance(project).findDaoByNamespace(ns) ?: return null
+        val loc = RustDaoIndex.getInstance(project).findDaoByNamespace(ns) ?: run {
+            log.info("[hirust-mapper-navigator] ns->dao unresolved: $ns")
+            return null
+        }
         return NavigationUtil.findElement(loc.file, project, loc.dao.attrOffset)
     }
 
@@ -75,6 +80,8 @@ class XmlNamespaceToDaoReference(element: XmlAttributeValue) :
 class XmlStatementIdToMethodReference(element: XmlAttributeValue) :
     PsiReferenceBase<XmlAttributeValue>(element) {
 
+    private val log = com.intellij.openapi.diagnostic.Logger.getInstance(XmlStatementIdToMethodReference::class.java)
+
     override fun resolve(): PsiElement? {
         val id = element.value ?: return null
         val project = element.project
@@ -82,8 +89,14 @@ class XmlStatementIdToMethodReference(element: XmlAttributeValue) :
         val tag = attr.parent as? XmlTag ?: return null
         val vFile = element.containingFile.virtualFile ?: return null
 
-        val info = XmlNamespaceIndex.getInstance(project).getMapperInfo(vFile) ?: return null
-        val loc = RustDaoIndex.getInstance(project).findMethod(info.namespace, id, tag.name) ?: return null
+        val info = XmlNamespaceIndex.getInstance(project).getMapperInfo(vFile) ?: run {
+            log.info("[hirust-mapper-navigator] stmt->method no mapper info: ${vFile.name}")
+            return null
+        }
+        val loc = RustDaoIndex.getInstance(project).findMethod(info.namespace, id, tag.name) ?: run {
+            log.info("[hirust-mapper-navigator] stmt->method unresolved: id=$id tag=${tag.name} ns=${info.namespace}")
+            return null
+        }
         return NavigationUtil.findElement(loc.file, project, loc.method.fnOffset)
     }
 

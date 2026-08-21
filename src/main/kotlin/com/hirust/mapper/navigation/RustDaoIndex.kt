@@ -53,8 +53,10 @@ class RustDaoIndex(private val project: Project) {
             indexFile(vf)
         }
         initialized = true
+        val methodCount = namespaceIndex.values.sumOf { it.dao.methods.size }
         log.info("[hirust-mapper-navigator] RustDaoIndex rebuilt: ${namespaceIndex.size} namespaces " +
-                "from ${files.size} rs files")
+                "($methodCount methods) from ${files.size} rs files; " +
+                namespaceIndex.keys.joinToString(", ", limit = 5))
     }
 
     private fun indexFile(vf: VirtualFile) {

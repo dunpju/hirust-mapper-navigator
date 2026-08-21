@@ -19,27 +19,31 @@
         ]]>
     </description>
     <vendor email="dengpju@hirust.com" url="https://hirust.com">hirust</vendor>
-    <version>1.1.3</version>
+    <version>1.1.5</version>
     <icon>icons/pluginIcon.svg</icon>
 
     <depends>com.intellij.modules.platform</depends>
-    <!-- Rust 侧扩展(引用贡献者 + 行标记)放到可选依赖片段中,
-         确保 org.rust.lang 插件(及其 RUST 语言)注册之后再加载我们的扩展。
-         无 Rust 插件的 IDE 中片段不加载,.rs 以 TEXT 兜底贡献者提供 Ctrl+Click。 -->
-    <depends optional="org.rust.lang" config-file="plugin-rust.xml">Rust</depends>
+    <!-- 注意:不能用 <depends optional="org.rust.lang"> —— RustRover 2026.2 中
+         Rust 支持已并入产品本体,不存在该 id 的插件(日志会显示 not resolved 并排除片段)。
+         因此 Rust 侧扩展改用 language="ANY" 注册(平台一级概念,匹配所有语言),
+         由各 Provider 内部按文件扩展名/PSI 类名自行过滤。 -->
 
     <extensions defaultExtensionNs="com.intellij">
         <!-- 引用贡献:XML 侧(namespace/语句 id 属性值 Ctrl+Click) -->
         <psi.referenceContributor language="XML"
             implementation="com.hirust.mapper.navigation.XmlMapperReferenceContributor"/>
 
-        <!-- 引用贡献:纯文本兜底(无 Rust 插件的 IDE 中 .rs 为 TEXT) -->
-        <psi.referenceContributor language="TEXT"
+        <!-- 引用贡献:Rust 侧(.rs 文件,任意语言环境:RustRover 的 RUST / 其他 IDE 的 TEXT) -->
+        <psi.referenceContributor language="ANY"
             implementation="com.hirust.mapper.navigation.RustReferenceContributor"/>
 
         <!-- 行标记:XML 侧 gutter 图标(mapper 标签与语句标签) -->
         <codeInsight.lineMarkerProvider language="XML"
             implementationClass="com.hirust.mapper.navigation.XmlMapperLineMarkerProvider"/>
+
+        <!-- 行标记:Rust 侧 gutter 图标(按 PSI 类名探测,仅 Rust PSI 环境实际生效) -->
+        <codeInsight.lineMarkerProvider language="ANY"
+            implementationClass="com.hirust.mapper.navigation.RustLineMarkerProvider"/>
 
         <!-- 项目级服务 -->
         <projectService

@@ -37,8 +37,12 @@ class XmlMapperLineMarkerProvider : LineMarkerProvider {
         return when (tag.name) {
             "mapper" -> {
                 val ns = tag.getAttributeValue("namespace") ?: return null
-                val loc = RustDaoIndex.getInstance(project).findDaoByNamespace(ns) ?: return null
+                val loc = RustDaoIndex.getInstance(project).findDaoByNamespace(ns) ?: run {
+                    log.info("[hirust-mapper-navigator] LineMarker <mapper> unresolved ns=$ns")
+                    return null
+                }
                 val dao = loc.dao
+                log.info("[hirust-mapper-navigator] LineMarker CREATE <mapper> -> ${loc.file.name}#${dao.implName}")
                 LineMarkerInfo(
                     element,
                     element.textRange,
@@ -53,9 +57,17 @@ class XmlMapperLineMarkerProvider : LineMarkerProvider {
             }
             in XmlMapperParser.STATEMENT_TAGS -> {
                 val id = tag.getAttributeValue("id") ?: return null
-                val info = XmlNamespaceIndex.getInstance(project).getMapperInfo(vFile) ?: return null
-                val loc = RustDaoIndex.getInstance(project).findMethod(info.namespace, id, tag.name) ?: return null
+                val info = XmlNamespaceIndex.getInstance(project).getMapperInfo(vFile) ?: run {
+                    log.info("[hirust-mapper-navigator] LineMarker <${tag.name} id=$id> no mapper info")
+                    return null
+                }
+                val loc = RustDaoIndex.getInstance(project).findMethod(info.namespace, id, tag.name) ?: run {
+                    log.info("[hirust-mapper-navigator] LineMarker <${tag.name} id=$id> no method " +
+                            "(ns=${info.namespace}, ids=${info.statements.joinToString { it.id }})")
+                    return null
+                }
                 val method = loc.method
+                log.info("[hirust-mapper-navigator] LineMarker CREATE <${tag.name} id=$id> -> ${loc.file.name}#${method.fnName}")
                 LineMarkerInfo(
                     element,
                     element.textRange,
