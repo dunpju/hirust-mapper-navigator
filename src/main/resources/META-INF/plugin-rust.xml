@@ -1,0 +1,14 @@
+<!-- 仅在存在 org.rust.lang 插件(RustRover / intellij-rust)的环境加载。
+     通过 <depends optional> 片段机制保证加载顺序:RUST 语言已注册,
+     避免 language="RUST" 扩展在语言未注册时被静默跳过的问题。 -->
+<idea-plugin>
+    <extensions defaultExtensionNs="com.intellij">
+        <!-- 引用贡献:Rust 侧(字符串字面量 namespace/id 与宏名标识符) -->
+        <psi.referenceContributor language="RUST"
+            implementation="com.hirust.mapper.navigation.RustReferenceContributor"/>
+
+        <!-- 行标记:Rust 侧 gutter 图标(impl → XML mapper;fn → XML 语句) -->
+        <codeInsight.lineMarkerProvider language="RUST"
+            implementationClass="com.hirust.mapper.navigation.RustLineMarkerProvider"/>
+    </extensions>
+</idea-plugin>

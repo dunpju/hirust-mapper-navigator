@@ -28,6 +28,7 @@ class XmlMapperLineMarkerProvider : LineMarkerProvider {
         if (prev !is com.intellij.psi.xml.XmlToken || prev.tokenType != XmlTokenType.XML_START_TAG_START) return null
         val tag = element.parent as? XmlTag ?: return null
         if (element.text != tag.name) return null
+        if (tag.name != "mapper" && tag.name !in XmlMapperParser.STATEMENT_TAGS) return null
         log.info("[hirust-mapper-navigator] LineMarker on <${tag.name}> in ${element.containingFile.name}")
 
         val project = element.project

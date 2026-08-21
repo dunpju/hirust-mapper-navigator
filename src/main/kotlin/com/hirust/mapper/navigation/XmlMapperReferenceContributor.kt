@@ -40,6 +40,9 @@ class XmlMapperReferenceProvider : PsiReferenceProvider() {
         val attr = attrValue.parent as? XmlAttribute ?: return PsiReference.EMPTY_ARRAY
         val tag = attr.parent as? XmlTag ?: return PsiReference.EMPTY_ARRAY
         val value = attrValue.value ?: return PsiReference.EMPTY_ARRAY
+        val interesting = (tag.name == "mapper" && attr.name == "namespace") ||
+                (tag.name in XmlMapperParser.STATEMENT_TAGS && attr.name == "id")
+        if (!interesting) return PsiReference.EMPTY_ARRAY
         log.info("[hirust-mapper-navigator] XML ref query: @${attr.name} in <${tag.name}> value='$value' " +
                 "file=${element.containingFile.name}")
 

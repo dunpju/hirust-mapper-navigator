@@ -102,28 +102,38 @@ class XmlNamespaceIndex(private val project: Project) {
                 .toString())
 
     private fun resolveGlobPattern(pattern: String): List<VirtualFile> {
-        val baseDir = project.baseDir ?: return emptyList()
+        val basePath = project.basePath ?: return emptyList()
+        // 统一分隔符并拆段;支持 ** 路径段(如 resources/mapper/**/*.xml)
+        val segments = pattern.replace('\\', '/').split('/').filter { it.isNotEmpty() }
+        if (segments.isEmpty()) return emptyList()
 
-        val dirPath = pattern.substringBeforeLast("/")
-        val dir = baseDir.findFileByRelativePath(dirPath) ?: run {
-            log.warn("[hirust-mapper-navigator] Directory not found: $dirPath")
+        val filePart = segments.last()
+        val dirSegments = segments.dropLast(1)
+        val recursive = dirSegments.contains("**") || filePart.startsWith("**")
+        val literalDirs = dirSegments.filter { it != "**" }
+        val ext = filePart.substringAfterLast('.', "").lowercase().ifEmpty { "xml" }
+
+        var dir: VirtualFile? = if (literalDirs.isEmpty()) {
+            findDirByRelativePath(basePath, "")
+        } else {
+            findDirByRelativePath(basePath, literalDirs.joinToString("/"))
+        }
+        if (dir == null) {
+            log.warn("[hirust-mapper-navigator] Directory not found: $literalDirs (pattern=$pattern)")
             return emptyList()
         }
 
-        val filePattern = pattern.substringAfterLast("/")
-        val recursive = filePattern.startsWith("**")
-
-        return collectFromDirectory(dir, recursive = recursive)
+        return collectFromDirectory(dir, recursive = recursive, ext = ext)
     }
 
-    private fun collectFromDirectory(dir: VirtualFile, recursive: Boolean = true): List<VirtualFile> {
+    private fun collectFromDirectory(dir: VirtualFile, recursive: Boolean = true, ext: String = "xml"): List<VirtualFile> {
         val files = mutableListOf<VirtualFile>()
 
         fun traverse(current: VirtualFile) {
             for (child in current.children) {
                 if (child.isDirectory) {
                     if (recursive) traverse(child)
-                } else if (child.extension == "xml") {
+                } else if (child.extension?.lowercase() == ext) {
                     files.add(child)
                 }
             }
