@@ -115,6 +115,8 @@ hirust-mapper-navigator/
 
 ## 后续计划（二期）
 
+> 📋 **完整改造方案见 [PLAN.md](PLAN.md)** —— 参照 [MybatisX](https://plugins.jetbrains.com/plugin/10119-mybatisx) 插件的功能改造实施计划（双向跳转 + 行标记），可在任何机器上按该文档独立执行。
+
 - [ ] XML → Rust 双向跳转（Ctrl+Click XML 中的 namespace 跳转到 DAO 文件）
 - [ ] XML `<select id="...">` ↔ Rust `#[mapper_query]` 函数双向跳转
 - [ ] XML SQL 片段 `<include refid="...">` → `<sql id="...">` 跳转
