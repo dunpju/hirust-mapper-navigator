@@ -31,7 +31,11 @@ class XmlIndexRefreshListener(private val project: Project) : BulkFileListener {
             when (ext) {
                 "rs" -> {
                     when (event) {
-                        is VFileCreateEvent,
+                        is VFileCreateEvent -> {
+                            rustIndex.refreshFile(file)
+                            // 新增 .rs 可能引入 with_mapper_paths 配置,同步刷新 XML 收集模式
+                            XmlNamespaceIndex.getInstance(project).rebuildIndex()
+                        }
                         is VFileDeleteEvent,
                         is VFileContentChangeEvent -> rustIndex.refreshFile(file)
                         is VFilePropertyChangeEvent ->

@@ -19,7 +19,7 @@
         ]]>
     </description>
     <vendor email="dengpju@hirust.com" url="https://hirust.com">hirust</vendor>
-    <version>1.1.0</version>
+    <version>1.1.1</version>
     <icon>icons/pluginIcon.svg</icon>
 
     <depends>com.intellij.modules.platform</depends>
@@ -52,9 +52,13 @@
             serviceImplementation="com.hirust.mapper.navigation.MapperPathsConfig"/>
         <projectService
             serviceImplementation="com.hirust.mapper.navigation.RustDaoIndex"/>
-
-        <!-- VFS 文件变更监听(XML 与 .rs 双侧索引刷新) -->
-        <fileListener
-            implementation="com.hirust.mapper.navigation.XmlIndexRefreshListener"/>
     </extensions>
+
+    <!-- VFS 文件变更监听(XML 与 .rs 双侧索引刷新)。
+         注意:平台不存在 com.intellij.fileListener 扩展点,
+         BulkFileListener 必须以 <projectListeners> 方式注册(构造器接收 Project)。 -->
+    <projectListeners>
+        <listener class="com.hirust.mapper.navigation.XmlIndexRefreshListener"
+            topic="com.intellij.openapi.vfs.newvfs.BulkFileListener"/>
+    </projectListeners>
 </idea-plugin>

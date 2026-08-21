@@ -1,9 +1,10 @@
 package com.hirust.mapper.navigation
 
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.fileTypes.FileTypeManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
-import com.intellij.psi.search.FilenameIndex
+import com.intellij.psi.search.FileTypeIndex
 import com.intellij.psi.search.GlobalSearchScope
 import java.util.concurrent.ConcurrentHashMap
 
@@ -38,17 +39,22 @@ class RustDaoIndex(private val project: Project) {
     fun rebuildIndex() {
         namespaceIndex.clear()
         val scope = GlobalSearchScope.projectScope(project)
+        // 注意:FilenameIndex.getVirtualFilesByName 按"完整文件名"匹配(".rs" 匹配不到 main.rs),
+        // 必须用 FileTypeIndex 按文件类型检索(RustRover 中是 RustFileType,无 Rust 插件时是 PlainText)
         val files = try {
-            FilenameIndex.getVirtualFilesByName(project, ".rs", scope)
+            val rsFileType = FileTypeManager.getInstance().getFileTypeByExtension("rs")
+            FileTypeIndex.getFiles(rsFileType, scope)
+                .filter { it.extension.equals("rs", ignoreCase = true) }
         } catch (e: Exception) {
-            log.warn("[hirust-mapper-navigator] FilenameIndex query failed: ${e.message}")
+            log.warn("[hirust-mapper-navigator] FileTypeIndex query failed: ${e.message}")
             return
         }
         for (vf in files) {
             indexFile(vf)
         }
         initialized = true
-        log.info("[hirust-mapper-navigator] RustDaoIndex rebuilt: ${namespaceIndex.size} namespaces")
+        log.info("[hirust-mapper-navigator] RustDaoIndex rebuilt: ${namespaceIndex.size} namespaces " +
+                "from ${files.size} rs files")
     }
 
     private fun indexFile(vf: VirtualFile) {

@@ -405,9 +405,15 @@ class RustLineMarkerProvider : LineMarkerProvider {
 17. [ ] 更新 `README.md`:功能说明(双向跳转、行标记)、截图位、结构图、"后续计划"勾选已完成项
 18. [x] 更新 `plugin.xml` 的 `<description>` 与版本号(已升到 1.1.0,build.gradle.kts 同步)
 19. [x] 新建 `sample/` 手动验证样例工程(Cargo.toml、main.rs 含 with_mapper_paths、DAO、XML)
-20. [ ] 运行 `gradle test` 全部通过
-21. [ ] 运行 `gradle buildPlugin` 产出 zip
-22. [ ] 修复 gradle wrapper(`.gitignore` 的 `*.jar` 排除了 `gradle-wrapper.jar`,需加回排除例外并重新生成,否则其他机器无法构建)
+20. [x] 运行 `gradle test` 全部通过(22/22,本机 Gradle 8.11 + JDK 17 验证;CI 亦已通过)
+21. [x] 运行 `gradle buildPlugin` 产出 zip(CI 构建 `hirust-mapper-navigator-1.1.0.zip`)
+22. [ ] 修复 gradle wrapper(`.gitignore` 已加排除例外,wrapper jar 待生成并提交)
+
+> **⚠️ 首次真机安装发现的致命 bug(已修复)**:plugin.xml 中的 `<fileListener>` 扩展点不存在
+> (v1.0 遗留问题),导致插件在 IDE 中完全无法加载(RustRover 日志:
+> "uses extension point 'com.intellij.fileListener' which was not found")。
+> 已改为 `<projectListeners>` + `topic="...BulkFileListener"` 标准注册方式。
+> 修复后需重新构建 zip 并**重启 IDE** 安装验证。
 
 ---
 
