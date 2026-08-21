@@ -19,7 +19,7 @@
         ]]>
     </description>
     <vendor email="dengpju@hirust.com" url="https://hirust.com">hirust</vendor>
-    <version>1.1.5</version>
+    <version>1.1.6</version>
     <icon>icons/pluginIcon.svg</icon>
 
     <depends>com.intellij.modules.platform</depends>
@@ -44,6 +44,10 @@
         <!-- 行标记:Rust 侧 gutter 图标(按 PSI 类名探测,仅 Rust PSI 环境实际生效) -->
         <codeInsight.lineMarkerProvider language="ANY"
             implementationClass="com.hirust.mapper.navigation.RustLineMarkerProvider"/>
+
+        <!-- Rust 侧 Ctrl+Click 跳转(语言无关通道,不受 language 注册限制) -->
+        <gotoDeclarationHandler
+            implementation="com.hirust.mapper.navigation.RustGotoDeclarationHandler"/>
 
         <!-- 项目级服务 -->
         <projectService
