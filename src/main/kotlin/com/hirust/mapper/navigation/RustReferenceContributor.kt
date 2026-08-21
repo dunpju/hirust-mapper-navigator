@@ -4,12 +4,12 @@ import com.intellij.openapi.util.TextRange
 import com.intellij.patterns.PlatformPatterns
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
-import com.intellij.psi.PsiLeafElement
 import com.intellij.psi.PsiReference
 import com.intellij.psi.PsiReferenceBase
 import com.intellij.psi.PsiReferenceContributor
 import com.intellij.psi.PsiReferenceProvider
 import com.intellij.psi.PsiReferenceRegistrar
+import com.intellij.psi.impl.source.tree.LeafPsiElement
 import com.intellij.util.ProcessingContext
 
 /**
@@ -43,7 +43,7 @@ class RustReferenceProvider : PsiReferenceProvider() {
 
         return when {
             // 场景1:纯文本单叶(无 Rust 插件)—— 按解析结果生成子区间引用
-            element is PsiLeafElement && element.parent is PsiFile ->
+            element is LeafPsiElement && element.parent is PsiFile ->
                 plainTextReferences(element)
 
             // 场景2:宏名标识符(如 mapper_query、dao)
@@ -70,7 +70,7 @@ class RustReferenceProvider : PsiReferenceProvider() {
 
     /** 宏名标识符:文本是已知宏,且处于 #[...] 属性名的位置 */
     private fun isAttributeMacroNameLeaf(element: PsiElement): Boolean {
-        if (element !is PsiLeafElement) return false
+        if (element !is LeafPsiElement) return false
         val word = element.text
         if (word.isEmpty() || word.length > 40) return false
         if (!isKnownMacro(word)) return false

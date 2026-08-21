@@ -167,8 +167,8 @@ object RustSourceParser {
     }
 
     /**
-     * 解析 content[hash..] 处的属性,失败返回 null。
-     * 跳过内部属性(#![...]),支持带路径的属性(tracing::instrument)、嵌套括号、字符串字面量。
+     * 解析从 hash 偏移开始的属性,失败返回 null。
+     * 跳过内部属性(感叹号形式),支持带路径的属性(tracing::instrument)、嵌套括号、字符串字面量。
      */
     private fun parseAttrAt(content: String, hash: Int): AttrInfo? {
         val n = content.length
@@ -243,8 +243,8 @@ object RustSourceParser {
 
     /**
      * 在 from 之后查找属性所附着的目标 fn:
-     * 跳过空白、注释、其他 #[...] 属性与修饰关键字(pub/pub(crate)/async/unsafe/const/extern/default),
-     * 直到遇到 `fn NAME`。遇到其他 token(如 struct/impl/{)则放弃。
+     * 跳过空白、注释、其他属性与修饰关键字(pub、pub(crate)、async、unsafe、const、extern、default),
+     * 直到遇到 `fn NAME`。遇到其他 token(如 struct、impl、大括号)则放弃。
      */
     private fun findFnAfter(content: String, from: Int): FnRef? {
         val n = content.length

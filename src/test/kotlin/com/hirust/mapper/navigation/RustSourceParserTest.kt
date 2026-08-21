@@ -62,7 +62,7 @@ class RustSourceParserTest {
         val methods = daos[0].methods.associateBy { it.fnName }
         assertEquals("select", methods["get_all"]!!.stmtTag)
         assertEquals("insert", methods["create"]!!.stmtTag)
-        assertEquals("update", methods["update_by_id"]!!.stmtTag)
+        assertEquals("update", methods["update"]!!.stmtTag)
         assertEquals("delete", methods["remove"]!!.stmtTag)
     }
 
@@ -97,7 +97,7 @@ class RustSourceParserTest {
         val m = dao.methods.first { it.fnName == "list_data" }
         assertTrue(sample.substring(m.macroOffset, m.macroOffset + 2) == "#[")
         assertEquals("mapper_query", sample.substring(m.macroNameOffset, m.macroNameOffset + "mapper_query".length))
-        assertEquals("fn", sample.substring(m.fnOffset - 3, m.fnOffset))
+        assertEquals("fn ", sample.substring(m.fnOffset - 3, m.fnOffset))
         assertEquals("list_data", sample.substring(m.fnOffset, m.fnOffset + "list_data".length))
         assertEquals('l', sample[m.idLiteralOffset])
         assertEquals("list", sample.substring(m.idLiteralOffset, m.idLiteralOffset + 4))
