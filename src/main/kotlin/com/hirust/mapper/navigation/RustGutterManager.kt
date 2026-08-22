@@ -71,7 +71,36 @@ class RustGutterManager(private val project: Project) : FileEditorManagerListene
         if (old != null) {
             old.forEach { markup.removeHighlighter(it) }
         }
+        val oldUnderlines = editor.getUserData(UNDERLINE_KEY)
+        if (oldUnderlines != null) {
+            oldUnderlines.forEach { markup.removeHighlighter(it) }
+        }
         val created = mutableListOf<RangeHighlighter>()
+
+        // 收集可跳转字面量区间(namespace / id),供 Ctrl+悬停动态绘制超链接样式
+        val linkRanges = mutableListOf<com.intellij.openapi.util.TextRange>()
+        for (dao in daos) {
+            if (dao.nsLiteralOffset >= 0 && dao.namespace.isNotEmpty()) {
+                linkRanges.add(
+                    com.intellij.openapi.util.TextRange(
+                        dao.nsLiteralOffset,
+                        (dao.nsLiteralOffset + dao.namespace.length).coerceAtMost(document.textLength)
+                    )
+                )
+            }
+            for (m in dao.methods) {
+                if (m.idLiteralOffset >= 0 && m.id.isNotEmpty()) {
+                    linkRanges.add(
+                        com.intellij.openapi.util.TextRange(
+                            m.idLiteralOffset,
+                            (m.idLiteralOffset + m.id.length).coerceAtMost(document.textLength)
+                        )
+                    )
+                }
+            }
+        }
+        editor.putUserData(LINK_RANGES_KEY, linkRanges)
+        attachHover(editor)
 
         fun addMarker(lineOffset: Int, tooltip: String, nav: () -> Unit) {
             val line = document.getLineNumber(lineOffset.coerceIn(0, document.textLength - 1))
@@ -107,6 +136,79 @@ class RustGutterManager(private val project: Project) : FileEditorManagerListene
         log.info("[hirust-mapper-navigator] Gutter painted: ${created.size} markers in ${vFile.name}")
     }
 
+    // ------------------------------------------------------------------
+    // Ctrl+悬停动态超链接(复刻原生引用交互:按住 Ctrl 才出现下划线 + 手型光标)
+    // ------------------------------------------------------------------
+
+    private fun attachHover(editor: Editor) {
+        if (editor.getUserData(HOVER_ATTACHED_KEY) == true) return
+        editor.putUserData(HOVER_ATTACHED_KEY, true)
+        editor.addEditorMouseMotionListener(object :
+            com.intellij.openapi.editor.event.EditorMouseMotionListener {
+            override fun mouseMoved(e: com.intellij.openapi.editor.event.EditorMouseEvent) =
+                handleHover(e)
+
+            override fun mouseDragged(e: com.intellij.openapi.editor.event.EditorMouseEvent) {}
+        })
+    }
+
+    private fun handleHover(e: com.intellij.openapi.editor.event.EditorMouseEvent) {
+        val editor = e.editor
+        val ctrlDown = (e.mouseEvent.modifiersEx and java.awt.event.InputEvent.CTRL_DOWN_MASK) != 0
+        val ranges = editor.getUserData(LINK_RANGES_KEY)
+        if (!ctrlDown || ranges.isNullOrEmpty()) {
+            clearHover(editor)
+            return
+        }
+        val offset = e.offset
+        if (offset < 0) {
+            clearHover(editor)
+            return
+        }
+        val hit = ranges.firstOrNull { offset >= it.startOffset && offset < it.endOffset }
+        if (hit == null) {
+            clearHover(editor)
+            return
+        }
+        val current = editor.getUserData(HOVER_HL_KEY)
+        if (current?.first == hit) return // 已高亮同一区间
+        clearHover(editor)
+        // 平台原生超链接样式(与 XML→Rust 引用悬停一致)
+        val attrs = editor.colorsScheme.getAttributes(
+            com.intellij.openapi.editor.colors.EditorColors.REFERENCE_HYPERLINK_COLOR
+        )
+        val hl = editor.markupModel.addRangeHighlighter(
+            hit.startOffset, hit.endOffset,
+            HighlighterLayer.HYPERLINK, attrs,
+            com.intellij.openapi.editor.markup.HighlighterTargetArea.EXACT_RANGE
+        )
+        editor.putUserData(HOVER_HL_KEY, hit to hl)
+        // 手型光标:EditorEx 不在可编译 API 上,直接设置 contentComponent 的光标,
+        // 并记录原光标以便恢复
+        val comp = editor.contentComponent
+        if (editor.getUserData(PREV_CURSOR_KEY) == null) {
+            editor.putUserData(PREV_CURSOR_KEY, comp.cursor)
+        }
+        comp.cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
+    }
+
+    private fun clearHover(editor: Editor) {
+        editor.getUserData(HOVER_HL_KEY)?.second?.let {
+            try {
+                editor.markupModel.removeHighlighter(it)
+            } catch (_: Exception) {
+            }
+        }
+        editor.putUserData(HOVER_HL_KEY, null)
+        editor.getUserData(PREV_CURSOR_KEY)?.let { prev ->
+            try {
+                editor.contentComponent.cursor = prev
+            } catch (_: Exception) {
+            }
+        }
+        editor.putUserData(PREV_CURSOR_KEY, null)
+    }
+
     /** 带点击跳转动作的 gutter 图标渲染器(仅使用公共 API) */
     private class NavIconRenderer(
         private val icon: Icon,
@@ -130,6 +232,22 @@ class RustGutterManager(private val project: Project) : FileEditorManagerListene
     companion object {
         private val RENDERED_KEY = Key.create<MutableList<RangeHighlighter>>(
             "hirust.mapper.navigator.gutter.markers"
+        )
+        private val UNDERLINE_KEY = Key.create<MutableList<RangeHighlighter>>(
+            "hirust.mapper.navigator.link.underlines"
+        )
+        private val LINK_RANGES_KEY = Key.create<MutableList<com.intellij.openapi.util.TextRange>>(
+            "hirust.mapper.navigator.link.ranges"
+        )
+        private val HOVER_HL_KEY =
+            Key.create<Pair<com.intellij.openapi.util.TextRange, RangeHighlighter>>(
+                "hirust.mapper.navigator.hover.hl"
+            )
+        private val HOVER_ATTACHED_KEY = Key.create<Boolean>(
+            "hirust.mapper.navigator.hover.attached"
+        )
+        private val PREV_CURSOR_KEY = Key.create<java.awt.Cursor>(
+            "hirust.mapper.navigator.hover.prevCursor"
         )
     }
 }

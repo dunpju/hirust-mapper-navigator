@@ -61,10 +61,15 @@ class RustGotoDeclarationHandler : GotoDeclarationHandler {
                 }
                 log.info("[hirust-mapper-navigator] GotoDecl ns->xml TARGET " +
                         "${xmlFile.name}@$targetOffset elem=${target.javaClass.simpleName}")
-                // 平台对 handler 返回目标的消费在此环境不生效,这里自行导航
-                com.intellij.openapi.fileEditor.OpenFileDescriptor(
-                    project, xmlFile, targetOffset
-                ).navigate(true)
+                // 平台在 Ctrl+悬停渲染下划线时也会调用本 handler,
+                // 因此仅在真实鼠标点击后的短窗口内才自行导航(见 isClickContext)
+                if (isClickContext()) {
+                    com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
+                        com.intellij.openapi.fileEditor.OpenFileDescriptor(
+                            project, xmlFile, targetOffset
+                        ).navigate(true)
+                    }
+                }
                 arrayOf(target)
             }
             attrName.startsWith("mapper_") && Regex("""\bid\s*=\s*"?$""").containsMatchIn(between) -> {
@@ -88,11 +93,15 @@ class RustGotoDeclarationHandler : GotoDeclarationHandler {
                 }
                 log.info("[hirust-mapper-navigator] GotoDecl id->xml TARGET " +
                         "${xmlLoc.file.name}@$targetOffset elem=${target.javaClass.simpleName}")
-                // 平台对 handler 返回目标的消费在此环境不生效,这里自行导航
-                // (与 gutter 图标同一通道);返回目标供 IDE 去重合并
-                com.intellij.openapi.fileEditor.OpenFileDescriptor(
-                    project, xmlLoc.file, targetOffset
-                ).navigate(true)
+                // 平台在 Ctrl+悬停渲染下划线时也会调用本 handler,
+                // 因此仅在真实鼠标点击后的短窗口内才自行导航(见 isClickContext)
+                if (isClickContext()) {
+                    com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
+                        com.intellij.openapi.fileEditor.OpenFileDescriptor(
+                            project, xmlLoc.file, targetOffset
+                        ).navigate(true)
+                    }
+                }
                 arrayOf(target)
             }
             else -> {
@@ -101,6 +110,37 @@ class RustGotoDeclarationHandler : GotoDeclarationHandler {
                 null
             }
         }
+    }
+
+    companion object {
+        /** 最近一次鼠标左键按下的时间戳;用于区分"点击查询"与"Ctrl 悬停渲染查询" */
+        @Volatile
+        private var lastClickAt = 0L
+
+        private const val CLICK_WINDOW_MS = 350L
+
+        init {
+            com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
+                try {
+                    java.awt.Toolkit.getDefaultToolkit().addAWTEventListener({ event ->
+                        if (event is java.awt.event.MouseEvent &&
+                            event.id == java.awt.event.MouseEvent.MOUSE_PRESSED &&
+                            (event.modifiersEx and java.awt.event.InputEvent.BUTTON1_DOWN_MASK) != 0
+                        ) {
+                            lastClickAt = System.currentTimeMillis()
+                        }
+                    }, java.awt.AWTEvent.MOUSE_EVENT_MASK)
+                } catch (_: Exception) {
+                }
+            }
+        }
+
+        /**
+         * 平台在 Ctrl+悬停(渲染下划线)与真实点击两种场景都会调用 handler;
+         * 只有处于点击后的短窗口内才执行自行导航,避免悬停即跳转。
+         */
+        private fun isClickContext(): Boolean =
+            System.currentTimeMillis() - lastClickAt <= CLICK_WINDOW_MS
     }
 
     /** 定位 offset 所在的字符串字面量(引号内),返回值与起止偏移 */
