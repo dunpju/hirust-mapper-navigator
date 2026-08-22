@@ -145,7 +145,8 @@ class XmlNamespaceIndex(private val project: Project) {
 
     private fun indexFile(xmlFile: VirtualFile) {
         try {
-            val content = VfsUtil.loadText(xmlFile)
+            // 必须保留原始行尾(\r\n),否则语句偏移会向下漂移
+            val content = NavigationUtil.loadTextRaw(xmlFile) ?: return
             val info = XmlMapperParser.parse(content) ?: run {
                 log.debug("[hirust-mapper-navigator] No namespace found in ${xmlFile.path}")
                 return
@@ -154,6 +155,23 @@ class XmlNamespaceIndex(private val project: Project) {
             indexedFiles.add(xmlFile)
             mapperInfoByFile[xmlFile] = info
             namespaceToFile[info.namespace] = xmlFile
+
+            // 诊断:量化行尾差异 + 语句偏移上下文
+            val normalizedLen = try {
+                VfsUtil.loadText(xmlFile).length
+            } catch (_: Exception) {
+                -1
+            }
+            log.info("[hirust-mapper-navigator] DIAG index ${xmlFile.name}: " +
+                    "rawLen=${content.length} normalizedLen=$normalizedLen " +
+                    "crlfCount=${Regex("\r\n").findAll(content).count()} " +
+                    "statements=${info.statements.joinToString(", ", limit = 12) { s ->
+                        "'${s.id}'@tag=${s.tagOffset},idVal=${s.idAttrOffset},ctx='" +
+                                content.substring(
+                                    (s.idAttrOffset - 8).coerceAtLeast(0),
+                                    (s.idAttrOffset + 12).coerceAtMost(content.length)
+                                ).replace("\r", "\\r").replace("\n", "\\n") + "'"
+                    }}")
 
             val stem = extractStem(info.namespace)
             if (stem != null) {

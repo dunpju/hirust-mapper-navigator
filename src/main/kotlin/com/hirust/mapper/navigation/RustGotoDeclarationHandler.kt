@@ -76,6 +76,9 @@ class RustGotoDeclarationHandler : GotoDeclarationHandler {
                 }
                 val targetOffset = xmlLoc.statement.idAttrOffset.takeIf { it >= 0 }
                     ?: xmlLoc.statement.tagOffset
+                log.info("[hirust-mapper-navigator] DIAG goto id->xml: " +
+                        "file=${xmlLoc.file.name} offset=$targetOffset " +
+                        "rawLen=${NavigationUtil.loadTextRaw(xmlLoc.file)?.length}")
                 val target = NavigationUtil.findElement(xmlLoc.file, project, targetOffset)
                 if (target == null) {
                     log.info("[hirust-mapper-navigator] GotoDecl id->xml: findElement null " +

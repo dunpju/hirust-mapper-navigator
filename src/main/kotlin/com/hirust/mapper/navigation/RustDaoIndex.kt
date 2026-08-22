@@ -75,7 +75,8 @@ class RustDaoIndex(private val project: Project) {
             if (s == stamp) return daos
         }
         val content = try {
-            com.intellij.openapi.vfs.VfsUtil.loadText(vf)
+            // 必须保留原始行尾(\r\n),否则 DAO/方法偏移会向下漂移
+            NavigationUtil.loadTextRaw(vf) ?: return null
         } catch (e: Exception) {
             log.warn("[hirust-mapper-navigator] Failed to read ${vf.path}: ${e.message}")
             return null
