@@ -145,8 +145,8 @@ class XmlNamespaceIndex(private val project: Project) {
 
     private fun indexFile(xmlFile: VirtualFile) {
         try {
-            // 必须保留原始行尾(\r\n),否则语句偏移会向下漂移
-            val content = NavigationUtil.loadTextRaw(xmlFile) ?: return
+            // 偏移必须与 Document 坐标对齐(\n 归一化),否则 CRLF 文件会逐行漂移
+            val content = NavigationUtil.loadTextDocumentAligned(xmlFile) ?: return
             val info = XmlMapperParser.parse(content) ?: run {
                 log.debug("[hirust-mapper-navigator] No namespace found in ${xmlFile.path}")
                 return

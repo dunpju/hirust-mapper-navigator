@@ -75,8 +75,8 @@ class RustDaoIndex(private val project: Project) {
             if (s == stamp) return daos
         }
         val content = try {
-            // 必须保留原始行尾(\r\n),否则 DAO/方法偏移会向下漂移
-            NavigationUtil.loadTextRaw(vf) ?: return null
+            // 偏移必须与 Document 坐标对齐(\n 归一化),否则 CRLF 文件会逐行漂移
+            NavigationUtil.loadTextDocumentAligned(vf) ?: return null
         } catch (e: Exception) {
             log.warn("[hirust-mapper-navigator] Failed to read ${vf.path}: ${e.message}")
             return null

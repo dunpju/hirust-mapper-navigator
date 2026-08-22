@@ -16,20 +16,22 @@ import com.intellij.psi.PsiManager
 object NavigationUtil {
 
     /**
-     * 读取文件文本并保留原始行结束符(\r\n)。
+     * 读取文件文本并按 Document 坐标归一化行结束符。
      *
-     * 注意:VfsUtil.loadText 会把行尾归一化为 \n,导致按偏移跳转时在 CRLF 文件上
-     * 逐行向下漂移;所有需要计算偏移的解析都必须用本方法。
-     * 同时剥离 UTF-8 BOM(编辑器文档同样不含 BOM)。
+     * IntelliJ 的 Editor Document 内部统一使用 \n 存储文本(磁盘上可以是 \r\n),
+     * 因此所有用于跳转寻址的偏移都必须基于 \n 归一化后的文本计算,
+     * 否则在 CRLF 文件上会逐行向下漂移(每行多 1 字符)。
+     * 同时剥离 UTF-8 BOM(文档同样不含 BOM)。
      */
-    fun loadTextRaw(file: VirtualFile): String? = try {
-        val text = String(file.contentsToByteArray(), Charsets.UTF_8)
-        if (text.startsWith(UTF8_BOM)) text.substring(1) else text
+    fun loadTextDocumentAligned(file: VirtualFile): String? = try {
+        val raw = String(file.contentsToByteArray(), Charsets.UTF_8)
+        val noBom = if (raw.startsWith(UTF8_BOM)) raw.substring(1) else raw
+        noBom.replace("\r\n", "\n").replace("\r", "\n")
     } catch (e: Exception) {
         null
     }
 
-    /** BOM 字符(U+FEFF),用于 [loadTextRaw] 的剥离判断 */
+    /** BOM 字符(U+FEFF),用于 [loadTextDocumentAligned] 的剥离判断 */
     private const val UTF8_BOM = "﻿"
 
     /** 打开文件并把光标定位到 offset(EDT 上执行,滚动到可见) */

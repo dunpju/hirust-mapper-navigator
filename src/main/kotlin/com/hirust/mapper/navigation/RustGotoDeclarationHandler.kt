@@ -61,6 +61,10 @@ class RustGotoDeclarationHandler : GotoDeclarationHandler {
                 }
                 log.info("[hirust-mapper-navigator] GotoDecl ns->xml TARGET " +
                         "${xmlFile.name}@$targetOffset elem=${target.javaClass.simpleName}")
+                // 平台对 handler 返回目标的消费在此环境不生效,这里自行导航
+                com.intellij.openapi.fileEditor.OpenFileDescriptor(
+                    project, xmlFile, targetOffset
+                ).navigate(true)
                 arrayOf(target)
             }
             attrName.startsWith("mapper_") && Regex("""\bid\s*=\s*"?$""").containsMatchIn(between) -> {
@@ -76,9 +80,6 @@ class RustGotoDeclarationHandler : GotoDeclarationHandler {
                 }
                 val targetOffset = xmlLoc.statement.idAttrOffset.takeIf { it >= 0 }
                     ?: xmlLoc.statement.tagOffset
-                log.info("[hirust-mapper-navigator] DIAG goto id->xml: " +
-                        "file=${xmlLoc.file.name} offset=$targetOffset " +
-                        "rawLen=${NavigationUtil.loadTextRaw(xmlLoc.file)?.length}")
                 val target = NavigationUtil.findElement(xmlLoc.file, project, targetOffset)
                 if (target == null) {
                     log.info("[hirust-mapper-navigator] GotoDecl id->xml: findElement null " +
@@ -87,6 +88,11 @@ class RustGotoDeclarationHandler : GotoDeclarationHandler {
                 }
                 log.info("[hirust-mapper-navigator] GotoDecl id->xml TARGET " +
                         "${xmlLoc.file.name}@$targetOffset elem=${target.javaClass.simpleName}")
+                // 平台对 handler 返回目标的消费在此环境不生效,这里自行导航
+                // (与 gutter 图标同一通道);返回目标供 IDE 去重合并
+                com.intellij.openapi.fileEditor.OpenFileDescriptor(
+                    project, xmlLoc.file, targetOffset
+                ).navigate(true)
                 arrayOf(target)
             }
             else -> {

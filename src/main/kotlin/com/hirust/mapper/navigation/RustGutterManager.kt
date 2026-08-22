@@ -55,6 +55,8 @@ class RustGutterManager(private val project: Project) : FileEditorManagerListene
 
     private fun paintGutter(editor: Editor, vFile: VirtualFile) {
         val daos = try {
+            // getParsed 内部按 Document 坐标(\n 归一化)解析,
+            // 因此这里用 document 行号寻址时偏移天然对齐
             RustDaoIndex.getInstance(project).getParsed(vFile) ?: return
         } catch (e: Exception) {
             log.warn("[hirust-mapper-navigator] Gutter parse failed: ${e.message}")
@@ -90,7 +92,7 @@ class RustGutterManager(private val project: Project) : FileEditorManagerListene
                 val target = xmlIndex.getMapperInfo(xmlFile)?.mapperTagOffset ?: 0
                 OpenFileDescriptor(project, xmlFile, target).navigate(true)
             }
-            // 方法宏行图标 → XML 语句
+            // 方法宏行图标 → XML 语句(偏移已按 Document 坐标归一化)
             for (m in dao.methods) {
                 val stmt = xmlIndex.findStatement(dao.namespace, m.id, m.stmtTag) ?: continue
                 addMarker(m.macroOffset, "跳转到 XML <${stmt.statement.tag} id=\"${stmt.statement.id}\">") {
