@@ -133,7 +133,7 @@ class RustGutterManager(private val project: Project) : FileEditorManagerListene
             }
         }
         editor.putUserData(RENDERED_KEY, created)
-        log.info("[hirust-mapper-navigator] Gutter painted: ${created.size} markers in ${vFile.name}")
+        log.debug("[hirust-mapper-navigator] Gutter painted: ${created.size} markers in ${vFile.name}")
     }
 
     // ------------------------------------------------------------------

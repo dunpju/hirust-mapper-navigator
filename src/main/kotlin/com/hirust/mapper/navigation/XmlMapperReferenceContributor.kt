@@ -33,8 +33,6 @@ class XmlMapperReferenceContributor : PsiReferenceContributor() {
 
 class XmlMapperReferenceProvider : PsiReferenceProvider() {
 
-    private val log = com.intellij.openapi.diagnostic.Logger.getInstance(XmlMapperReferenceProvider::class.java)
-
     override fun getReferencesByElement(element: PsiElement, context: ProcessingContext): Array<PsiReference> {
         val attrValue = element as? XmlAttributeValue ?: return PsiReference.EMPTY_ARRAY
         val attr = attrValue.parent as? XmlAttribute ?: return PsiReference.EMPTY_ARRAY
@@ -43,8 +41,6 @@ class XmlMapperReferenceProvider : PsiReferenceProvider() {
         val interesting = (tag.name == "mapper" && attr.name == "namespace") ||
                 (tag.name in XmlMapperParser.STATEMENT_TAGS && attr.name == "id")
         if (!interesting) return PsiReference.EMPTY_ARRAY
-        log.info("[hirust-mapper-navigator] XML ref query: @${attr.name} in <${tag.name}> value='$value' " +
-                "file=${element.containingFile.name}")
 
         val ref = when {
             tag.name == "mapper" && attr.name == "namespace" && value.isNotEmpty() ->
@@ -66,10 +62,7 @@ class XmlNamespaceToDaoReference(element: XmlAttributeValue) :
     override fun resolve(): PsiElement? {
         val ns = element.value ?: return null
         val project = element.project
-        val loc = RustDaoIndex.getInstance(project).findDaoByNamespace(ns) ?: run {
-            log.info("[hirust-mapper-navigator] ns->dao unresolved: $ns")
-            return null
-        }
+        val loc = RustDaoIndex.getInstance(project).findDaoByNamespace(ns) ?: return null
         return NavigationUtil.findElement(loc.file, project, loc.dao.attrOffset)
     }
 
@@ -89,14 +82,8 @@ class XmlStatementIdToMethodReference(element: XmlAttributeValue) :
         val tag = attr.parent as? XmlTag ?: return null
         val vFile = element.containingFile.virtualFile ?: return null
 
-        val info = XmlNamespaceIndex.getInstance(project).getMapperInfo(vFile) ?: run {
-            log.info("[hirust-mapper-navigator] stmt->method no mapper info: ${vFile.name}")
-            return null
-        }
-        val loc = RustDaoIndex.getInstance(project).findMethod(info.namespace, id, tag.name) ?: run {
-            log.info("[hirust-mapper-navigator] stmt->method unresolved: id=$id tag=${tag.name} ns=${info.namespace}")
-            return null
-        }
+        val info = XmlNamespaceIndex.getInstance(project).getMapperInfo(vFile) ?: return null
+        val loc = RustDaoIndex.getInstance(project).findMethod(info.namespace, id, tag.name) ?: return null
         return NavigationUtil.findElement(loc.file, project, loc.method.fnOffset)
     }
 

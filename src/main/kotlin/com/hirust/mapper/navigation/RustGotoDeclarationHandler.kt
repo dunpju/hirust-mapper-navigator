@@ -1,7 +1,6 @@
 package com.hirust.mapper.navigation
 
 import com.intellij.codeInsight.navigation.actions.GotoDeclarationHandler
-import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.Editor
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
@@ -19,8 +18,6 @@ import com.intellij.psi.PsiFile
  */
 class RustGotoDeclarationHandler : GotoDeclarationHandler {
 
-    private val log = Logger.getInstance(RustGotoDeclarationHandler::class.java)
-
     override fun getGotoDeclarationTargets(
         sourceElement: PsiElement?,
         offset: Int,
@@ -34,7 +31,6 @@ class RustGotoDeclarationHandler : GotoDeclarationHandler {
         val fileText = file.text ?: return null
         val literal = literalAt(fileText, offset) ?: return null
         val project = element.project
-        log.info("[hirust-mapper-navigator] GotoDecl in rs: literal='${literal.value.take(60)}' offset=$offset")
 
         // 判定字面量上下文:namespace 或 mapper 宏的 id
         val attrHash = fileText.lastIndexOf("#[", literal.start)
@@ -47,20 +43,9 @@ class RustGotoDeclarationHandler : GotoDeclarationHandler {
         return when {
             attrName == "dao" && Regex("""\bnamespace\s*=\s*"?$""").containsMatchIn(between) -> {
                 val xmlIndex = XmlNamespaceIndex.getInstance(project)
-                val xmlFile = xmlIndex.findXmlFile(literal.value) ?: run {
-                    log.info("[hirust-mapper-navigator] GotoDecl ns->xml: no xml file for ${literal.value}")
-                    return null
-                }
-                val info = xmlIndex.getMapperInfo(xmlFile)
-                val targetOffset = info?.mapperTagOffset ?: 0
-                val target = NavigationUtil.findElement(xmlFile, project, targetOffset)
-                if (target == null) {
-                    log.info("[hirust-mapper-navigator] GotoDecl ns->xml: findElement null " +
-                            "(file=${xmlFile.path} offset=$targetOffset infoNull=${info == null})")
-                    return null
-                }
-                log.info("[hirust-mapper-navigator] GotoDecl ns->xml TARGET " +
-                        "${xmlFile.name}@$targetOffset elem=${target.javaClass.simpleName}")
+                val xmlFile = xmlIndex.findXmlFile(literal.value) ?: return null
+                val targetOffset = xmlIndex.getMapperInfo(xmlFile)?.mapperTagOffset ?: 0
+                val target = NavigationUtil.findElement(xmlFile, project, targetOffset) ?: return null
                 // 平台在 Ctrl+悬停渲染下划线时也会调用本 handler,
                 // 因此仅在真实鼠标点击后的短窗口内才自行导航(见 isClickContext)
                 if (isClickContext()) {
@@ -73,28 +58,15 @@ class RustGotoDeclarationHandler : GotoDeclarationHandler {
                 arrayOf(target)
             }
             attrName.startsWith("mapper_") && Regex("""\bid\s*=\s*"?$""").containsMatchIn(between) -> {
-                val loc = RustDaoIndex.getInstance(project).findMethodAt(vFile, literal.start) ?: run {
-                    log.info("[hirust-mapper-navigator] GotoDecl id->xml: no method at offset ${literal.start}")
-                    return null
-                }
+                val loc = RustDaoIndex.getInstance(project).findMethodAt(vFile, literal.start)
+                    ?: return null
                 val xmlLoc = XmlNamespaceIndex.getInstance(project)
-                    .findStatement(loc.dao.namespace, loc.method.id, loc.method.stmtTag) ?: run {
-                    log.info("[hirust-mapper-navigator] GotoDecl id->xml: no statement " +
-                            "(ns=${loc.dao.namespace} id=${loc.method.id} tag=${loc.method.stmtTag})")
-                    return null
-                }
+                    .findStatement(loc.dao.namespace, loc.method.id, loc.method.stmtTag)
+                    ?: return null
                 val targetOffset = xmlLoc.statement.idAttrOffset.takeIf { it >= 0 }
                     ?: xmlLoc.statement.tagOffset
                 val target = NavigationUtil.findElement(xmlLoc.file, project, targetOffset)
-                if (target == null) {
-                    log.info("[hirust-mapper-navigator] GotoDecl id->xml: findElement null " +
-                            "(file=${xmlLoc.file.path} offset=$targetOffset)")
-                    return null
-                }
-                log.info("[hirust-mapper-navigator] GotoDecl id->xml TARGET " +
-                        "${xmlLoc.file.name}@$targetOffset elem=${target.javaClass.simpleName}")
-                // 平台在 Ctrl+悬停渲染下划线时也会调用本 handler,
-                // 因此仅在真实鼠标点击后的短窗口内才自行导航(见 isClickContext)
+                    ?: return null
                 if (isClickContext()) {
                     com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
                         com.intellij.openapi.fileEditor.OpenFileDescriptor(
@@ -104,11 +76,7 @@ class RustGotoDeclarationHandler : GotoDeclarationHandler {
                 }
                 arrayOf(target)
             }
-            else -> {
-                log.info("[hirust-mapper-navigator] GotoDecl ignored: attr=$attrName " +
-                        "between='${between.takeLast(40)}'")
-                null
-            }
+            else -> null
         }
     }
 

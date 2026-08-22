@@ -18,8 +18,6 @@ import java.util.function.Supplier
  */
 class XmlMapperLineMarkerProvider : LineMarkerProvider {
 
-    private val log = com.intellij.openapi.diagnostic.Logger.getInstance(XmlMapperLineMarkerProvider::class.java)
-
     override fun getLineMarkerInfo(element: PsiElement): LineMarkerInfo<*>? {
         // 仅处理叶子上的开始标签名 token:<mapper、<select 等
         if (element !is com.intellij.psi.xml.XmlToken) return null
@@ -29,7 +27,6 @@ class XmlMapperLineMarkerProvider : LineMarkerProvider {
         val tag = element.parent as? XmlTag ?: return null
         if (element.text != tag.name) return null
         if (tag.name != "mapper" && tag.name !in XmlMapperParser.STATEMENT_TAGS) return null
-        log.info("[hirust-mapper-navigator] LineMarker on <${tag.name}> in ${element.containingFile.name}")
 
         val project = element.project
         val vFile = element.containingFile.virtualFile ?: return null
@@ -37,12 +34,8 @@ class XmlMapperLineMarkerProvider : LineMarkerProvider {
         return when (tag.name) {
             "mapper" -> {
                 val ns = tag.getAttributeValue("namespace") ?: return null
-                val loc = RustDaoIndex.getInstance(project).findDaoByNamespace(ns) ?: run {
-                    log.info("[hirust-mapper-navigator] LineMarker <mapper> unresolved ns=$ns")
-                    return null
-                }
+                val loc = RustDaoIndex.getInstance(project).findDaoByNamespace(ns) ?: return null
                 val dao = loc.dao
-                log.info("[hirust-mapper-navigator] LineMarker CREATE <mapper> -> ${loc.file.name}#${dao.implName}")
                 LineMarkerInfo(
                     element,
                     element.textRange,
@@ -57,17 +50,9 @@ class XmlMapperLineMarkerProvider : LineMarkerProvider {
             }
             in XmlMapperParser.STATEMENT_TAGS -> {
                 val id = tag.getAttributeValue("id") ?: return null
-                val info = XmlNamespaceIndex.getInstance(project).getMapperInfo(vFile) ?: run {
-                    log.info("[hirust-mapper-navigator] LineMarker <${tag.name} id=$id> no mapper info")
-                    return null
-                }
-                val loc = RustDaoIndex.getInstance(project).findMethod(info.namespace, id, tag.name) ?: run {
-                    log.info("[hirust-mapper-navigator] LineMarker <${tag.name} id=$id> no method " +
-                            "(ns=${info.namespace}, ids=${info.statements.joinToString { it.id }})")
-                    return null
-                }
+                val info = XmlNamespaceIndex.getInstance(project).getMapperInfo(vFile) ?: return null
+                val loc = RustDaoIndex.getInstance(project).findMethod(info.namespace, id, tag.name) ?: return null
                 val method = loc.method
-                log.info("[hirust-mapper-navigator] LineMarker CREATE <${tag.name} id=$id> -> ${loc.file.name}#${method.fnName}")
                 LineMarkerInfo(
                     element,
                     element.textRange,

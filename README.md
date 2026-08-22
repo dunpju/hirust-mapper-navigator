@@ -16,6 +16,10 @@ RustRover 插件，为 [hirust-mapper](https://github.com/hirust/hirust-mapper) 
 
 **id 映射规则**：宏 `id` 参数优先，缺省用函数名。语句类型映射：`mapper_insert`→`<insert>`、`mapper_update`→`<update>`、`mapper_delete`→`<delete>`、其余（`mapper_query`/`mapper_select` 等）→`<select>`。
 
+**交互体验**（与 IDE 原生超链接一致）：
+- Rust 侧：按住 Ctrl 悬停 namespace/id 字面量 → 原生样式下划线 + 手型光标；Ctrl+左键点击跳转
+- 行号旁小鸟图标点击跳转（Rust 的 impl/方法行、XML 的 mapper/语句行）
+
 ```rust
 #[dao(namespace = "crate::app::dao::privilege_project_dao")]
 impl PrivilegeProjectDao {
@@ -63,12 +67,15 @@ let mapper_config = HirustMapperConfig::new()
 
 ### 环境兼容性
 
-| 环境 | Rust→XML Ctrl+Click | Rust→XML 图标 | XML→Rust Ctrl+Click | XML→Rust 图标 |
-|------|--------------------|---------------|--------------------|--------------|
+| 环境 | Rust→XML Ctrl+Click | Rust 悬停下划线/图标 | XML→Rust Ctrl+Click | XML→Rust 图标 |
+|------|--------------------|--------------------|--------------------|--------------|
 | RustRover（推荐） | ✅ | ✅ | ✅ | ✅ |
-| 其他 IDE（.rs 为纯文本） | ✅（文本区间引用） | — | ✅ | ✅ |
+| 其他 IDE（.rs 为纯文本） | ✅（文本区间引用） | 图标 ✅ / 悬停下划线 ✅ | ✅ | ✅ |
 
-插件编译不依赖 Rust 插件（基于 IntelliJ Platform 通用 API + 文本解析），在 RustRover 中通过运行时类名探测获得完整体验。
+插件编译不依赖 Rust 插件（基于 IntelliJ Platform 通用 API + 文本解析）。
+> 实现说明：RustRover 2026.2 的 Rust 支持已并入产品本体，`language="RUST"` 的扩展点注册不会生效；
+> 因此 Rust 侧跳转走 `GotoDeclarationHandler`（语言无关）、图标与悬停下划线走编辑器程序化注册通道。
+> 偏移计算统一按 Document 坐标（`\n` 归一化），CRLF 文件落点同样精准。详见 [PLAN.md](PLAN.md) 踩坑记录。
 
 ## 构建
 
@@ -95,13 +102,13 @@ git push origin v1.0.0
 gradlew.bat buildPlugin
 ```
 
-构建产物位于 `build/distributions/hirust-mapper-navigator-1.1.1.zip`。
+构建产物位于 `build/distributions/hirust-mapper-navigator-1.2.0.zip`。
 
 ### 在 RustRover 中安装
 
 1. 打开 RustRover → **Settings** → **Plugins**
 2. 点击 **⚙️** → **Install Plugin from Disk...**
-3. 选择 `build/distributions/hirust-mapper-navigator-1.1.1.zip`
+3. 选择 `build/distributions/hirust-mapper-navigator-1.2.0.zip`
 4. 重启 RustRover
 
 ### 调试模式运行

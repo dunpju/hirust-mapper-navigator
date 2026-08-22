@@ -36,8 +36,6 @@ object NavigationUtil {
 
     /** 打开文件并把光标定位到 offset(EDT 上执行,滚动到可见) */
     fun openAt(project: Project, file: VirtualFile, offset: Int) {
-        com.intellij.openapi.diagnostic.Logger.getInstance("HirustDiag")
-            .info("[hirust-mapper-navigator] DIAG openAt: ${file.name} offset=$offset")
         val runnable = Runnable {
             if (project.isDisposed || !file.isValid) return@Runnable
             FileEditorManager.getInstance(project)
@@ -51,16 +49,6 @@ object NavigationUtil {
     fun findElement(file: VirtualFile, project: Project, offset: Int): PsiElement? {
         if (!file.isValid) return null
         val psiFile = PsiManager.getInstance(project).findFile(file) ?: return null
-        val element = psiFile.findElementAt(offset.coerceIn(0, (psiFile.textLength - 1).coerceAtLeast(0)))
-        if (element != null) {
-            val doc = com.intellij.psi.PsiDocumentManager.getInstance(project).getDocument(psiFile)
-            val line = doc?.getLineNumber(element.textOffset.coerceIn(0, doc.textLength - 1)) ?: -1
-            com.intellij.openapi.diagnostic.Logger.getInstance("HirustDiag").info(
-                "[hirust-mapper-navigator] DIAG findElement: ${file.name} psiLen=${psiFile.textLength} " +
-                        "askOffset=$offset elemOffset=${element.textOffset} line=$line " +
-                        "elem='${element.text.take(20)}'"
-            )
-        }
-        return element
+        return psiFile.findElementAt(offset.coerceIn(0, (psiFile.textLength - 1).coerceAtLeast(0)))
     }
 }

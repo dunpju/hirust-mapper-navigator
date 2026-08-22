@@ -156,23 +156,6 @@ class XmlNamespaceIndex(private val project: Project) {
             mapperInfoByFile[xmlFile] = info
             namespaceToFile[info.namespace] = xmlFile
 
-            // 诊断:量化行尾差异 + 语句偏移上下文
-            val normalizedLen = try {
-                VfsUtil.loadText(xmlFile).length
-            } catch (_: Exception) {
-                -1
-            }
-            log.info("[hirust-mapper-navigator] DIAG index ${xmlFile.name}: " +
-                    "rawLen=${content.length} normalizedLen=$normalizedLen " +
-                    "crlfCount=${Regex("\r\n").findAll(content).count()} " +
-                    "statements=${info.statements.joinToString(", ", limit = 12) { s ->
-                        "'${s.id}'@tag=${s.tagOffset},idVal=${s.idAttrOffset},ctx='" +
-                                content.substring(
-                                    (s.idAttrOffset - 8).coerceAtLeast(0),
-                                    (s.idAttrOffset + 12).coerceAtMost(content.length)
-                                ).replace("\r", "\\r").replace("\n", "\\n") + "'"
-                    }}")
-
             val stem = extractStem(info.namespace)
             if (stem != null) {
                 stemToFile[stem] = xmlFile

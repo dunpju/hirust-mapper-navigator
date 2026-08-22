@@ -373,7 +373,7 @@ class RustLineMarkerProvider : LineMarkerProvider {
 
 ## 八、实施步骤(按顺序执行)
 
-> 执行进度:2026-08-21 阶段 1~4 与阶段 5 的 plugin.xml/版本/sample 已完成 ✅,README 与构建验证进行中。
+> 执行进度:2026-08-23 **全部完成 ✅**(v1.2.0,双向跳转 + 行标记 + 原生悬停交互均已真机验证)。
 
 ### 阶段 1:纯文本解析层 + 单元测试 ✅
 1. [x] 新建 `src/main/kotlin/com/hirust/mapper/navigation/RustSourceParser.kt`
@@ -402,18 +402,31 @@ class RustLineMarkerProvider : LineMarkerProvider {
 
 ### 阶段 5:装配与文档
 16. [x] 重写 `plugin.xml`(按 §7,删除坏的 postStartupActivity;描述与图标已更新)
-17. [ ] 更新 `README.md`:功能说明(双向跳转、行标记)、截图位、结构图、"后续计划"勾选已完成项
-18. [x] 更新 `plugin.xml` 的 `<description>` 与版本号(已升到 1.1.0,build.gradle.kts 同步)
+17. [x] 更新 `README.md`:功能说明(双向跳转、行标记、悬停交互)、环境兼容表、结构图
+18. [x] 版本号(最终发布版 **1.2.0**)
 19. [x] 新建 `sample/` 手动验证样例工程(Cargo.toml、main.rs 含 with_mapper_paths、DAO、XML)
-20. [x] 运行 `gradle test` 全部通过(22/22,本机 Gradle 8.11 + JDK 17 验证;CI 亦已通过)
-21. [x] 运行 `gradle buildPlugin` 产出 zip(CI 构建 `hirust-mapper-navigator-1.1.0.zip`)
-22. [ ] 修复 gradle wrapper(`.gitignore` 已加排除例外,wrapper jar 待生成并提交)
+20. [x] 运行 `gradle test` 全部通过(22/22)
+21. [x] 运行 `gradle buildPlugin` 产出 zip
+22. [x] 修复 gradle wrapper(`.gitignore` 已加排除例外并生成 wrapper jar 纳入版本控制)
 
-> **⚠️ 首次真机安装发现的致命 bug(已修复)**:plugin.xml 中的 `<fileListener>` 扩展点不存在
-> (v1.0 遗留问题),导致插件在 IDE 中完全无法加载(RustRover 日志:
-> "uses extension point 'com.intellij.fileListener' which was not found")。
-> 已改为 `<projectListeners>` + `topic="...BulkFileListener"` 标准注册方式。
-> 修复后需重新构建 zip 并**重启 IDE** 安装验证。
+---
+
+## 十二、真机调试踩坑记录(RustRover 2026.2,对二次开发最重要)
+
+按发现顺序记录实际遇到的问题、症状与修复,全部经过日志/字节级验证:
+
+| # | 问题 | 症状 | 修复 |
+|---|------|------|------|
+| 1 | plugin.xml 使用了不存在的 `<fileListener>` 扩展点(v1.0 遗留) | 插件完全无法加载 | 改用 `<projectListeners>` + `topic="...BulkFileListener"` |
+| 2 | `FilenameIndex.getVirtualFilesByName(".rs")` 按"完整文件名"匹配 | 索引 0 个 Rust 文件 | 改用 `FileTypeIndex.getFiles(类型, scope)` + 扩展名过滤 |
+| 3 | `MapperPathsConfig.refresh()` 无调用方(v1.0 由已删除的 PluginStartup 调用) | with_mapper_paths 永远为空 | 在 `XmlNamespaceIndex.rebuildIndex()` 中调用;.rs 新建时重建 |
+| 4 | glob 解析把 `**` 当目录名的一部分(`resources/mapper/**` 不存在) | 索引 0 个 XML | 按路径段解析:字面段拼目录、`**` 段表递归 |
+| 5 | `<depends optional="org.rust.lang">` — RustRover 2026.2 中 Rust 已并入产品本体,该插件 id 不存在(日志:`plugin org.rust.lang is not resolved`) | 可选依赖片段被整体排除 | 放弃依赖 id 方案(注意 `optional` 属性是布尔值,插件 id 放元素文本) |
+| 6 | `psi.referenceContributor` / `lineMarkerProvider` 以 `language="RUST"` 或 `"ANY"` 注册均**不会被咨询**(仅 `language="XML"` 生效),原因未公开文档化 | Rust 侧引用/行标记完全失效 | 跳转改走 `gotoDeclarationHandler`(无 language 属性,全语言生效);图标与悬停下划线在编辑器打开时程序化注册(`addLineHighlighter` + `setGutterIconRenderer` + `EditorMouseMotionListener`) |
+| 7 | **偏移坐标系**:解析文本与 Editor Document 不一致 —— Document 内部统一用 `\n`(磁盘可为 `\r\n`),而 `VfsUtil.loadText` 实测**不归一化** | CRLF 文件跳转落点逐行向下漂移(147 行漂到 151 行) | `NavigationUtil.loadTextDocumentAligned`:读原始字节 → 去 BOM → `\r\n`→`\n` 再解析 |
+| 8 | `GotoDeclarationHandler` 会被**后台协程线程**调用(悬停渲染也会调用) | 直接 `navigate(true)` 触发 EDT 断言;悬停即跳转 | 导航包 `invokeLater` 派发到 EDT;并用 AWT 全局监听记录鼠标点击时刻,仅在点击后 350ms 窗口内自导航 |
+| 9 | `EditorEx` 不在 2024.2 可编译 API 上 | 手型光标无法用 `setCustomCursor` | 直接设置 `editor.contentComponent.cursor`(记录原值恢复) |
+| 10 | 真实工程中 XML 同时含"动态查询语句"(select0/insert 等)与"宏方法语句"(get_all/list) | 部分 id 无跳转属**预期**(无对应 Rust 方法) | — |
 
 ---
 
