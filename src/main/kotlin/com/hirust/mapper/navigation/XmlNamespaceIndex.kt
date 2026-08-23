@@ -42,6 +42,18 @@ class XmlNamespaceIndex(private val project: Project) {
     @Volatile
     private var initialized = false
 
+    /**
+     * 懒加载入口:预热完成前用户已触发交互时,同步回退到协调扫描
+     * (协调器会先刷新 with_mapper_paths 模式再重建本索引)。
+     */
+    fun ensureInitialized() {
+        if (!initialized) MapperScanCoordinator.getInstance(project).rebuildAll()
+    }
+
+    /**
+     * 重建 XML 索引。注意:with_mapper_paths 模式由 [MapperScanCoordinator]
+     * 在协调扫描中先行刷新(单次 .rs 遍历),此处不再重复扫描 .rs。
+     */
     fun rebuildIndex() {
         log.info("[hirust-mapper-navigator] Rebuilding XML namespace index...")
 
@@ -49,9 +61,6 @@ class XmlNamespaceIndex(private val project: Project) {
         stemToFile.clear()
         mapperInfoByFile.clear()
         indexedFiles.clear()
-
-        // 刷新 with_mapper_paths 配置(此前该 refresh 无调用方,属集成遗漏)
-        MapperPathsConfig.getInstance(project).refresh()
 
         val xmlFiles = collectXmlFiles()
         for (xmlFile in xmlFiles) {
@@ -214,12 +223,6 @@ class XmlNamespaceIndex(private val project: Project) {
             }
         }
         return lastSegment
-    }
-
-    fun ensureInitialized() {
-        if (!initialized) {
-            rebuildIndex()
-        }
     }
 
     fun getXmlFileByNamespace(namespace: String): VirtualFile? {

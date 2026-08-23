@@ -102,13 +102,13 @@ git push origin v1.0.0
 gradlew.bat buildPlugin
 ```
 
-构建产物位于 `build/distributions/hirust-mapper-navigator-1.2.0.zip`。
+构建产物位于 `build/distributions/hirust-mapper-navigator-1.2.1.zip`。
 
 ### 在 RustRover 中安装
 
 1. 打开 RustRover → **Settings** → **Plugins**
 2. 点击 **⚙️** → **Install Plugin from Disk...**
-3. 选择 `build/distributions/hirust-mapper-navigator-1.2.0.zip`
+3. 选择 `build/distributions/hirust-mapper-navigator-1.2.1.zip`
 4. 重启 RustRover
 
 ### 调试模式运行

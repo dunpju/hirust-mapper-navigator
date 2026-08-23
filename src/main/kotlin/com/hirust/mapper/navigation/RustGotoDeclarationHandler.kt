@@ -37,11 +37,11 @@ class RustGotoDeclarationHandler : GotoDeclarationHandler {
         if (attrHash < 0) return null
         val between = fileText.substring(attrHash, literal.start)
         if (between.contains(']')) return null
-        val nameMatch = Regex("""^#\[\s*([A-Za-z_][A-Za-z0-9_]*)""").find(between) ?: return null
+        val nameMatch = ATTR_NAME_REGEX.find(between) ?: return null
         val attrName = nameMatch.groupValues[1]
 
         return when {
-            attrName == "dao" && Regex("""\bnamespace\s*=\s*"?$""").containsMatchIn(between) -> {
+            attrName == "dao" && NS_SUFFIX_REGEX.containsMatchIn(between) -> {
                 val xmlIndex = XmlNamespaceIndex.getInstance(project)
                 val xmlFile = xmlIndex.findXmlFile(literal.value) ?: return null
                 val targetOffset = xmlIndex.getMapperInfo(xmlFile)?.mapperTagOffset ?: 0
@@ -57,7 +57,7 @@ class RustGotoDeclarationHandler : GotoDeclarationHandler {
                 }
                 arrayOf(target)
             }
-            attrName.startsWith("mapper_") && Regex("""\bid\s*=\s*"?$""").containsMatchIn(between) -> {
+            attrName.startsWith("mapper_") && ID_SUFFIX_REGEX.containsMatchIn(between) -> {
                 val loc = RustDaoIndex.getInstance(project).findMethodAt(vFile, literal.start)
                     ?: return null
                 val xmlLoc = XmlNamespaceIndex.getInstance(project)
@@ -81,6 +81,11 @@ class RustGotoDeclarationHandler : GotoDeclarationHandler {
     }
 
     companion object {
+        /** 属性名匹配(悬停/点击热路径共用,编译一次) */
+        private val ATTR_NAME_REGEX = Regex("""^#\[\s*([A-Za-z_][A-Za-z0-9_]*)""")
+        private val NS_SUFFIX_REGEX = Regex("""\bnamespace\s*=\s*"?$""")
+        private val ID_SUFFIX_REGEX = Regex("""\bid\s*=\s*"?$""")
+
         /** 最近一次鼠标左键按下的时间戳;用于区分"点击查询"与"Ctrl 悬停渲染查询" */
         @Volatile
         private var lastClickAt = 0L

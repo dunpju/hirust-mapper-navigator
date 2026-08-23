@@ -430,6 +430,22 @@ class RustLineMarkerProvider : LineMarkerProvider {
 
 ---
 
+## 十三、性能优化记录(v1.2.1)
+
+| 级别 | 问题 | 优化 |
+|------|------|------|
+| P1 | 首次交互双重全项目 IO(MapperPathsConfig 与 RustDaoIndex 各自全量读 .rs,且在 EDT) | 新增 `MapperScanCoordinator`:**单次 .rs 遍历**同时供给两个索引;`MapperWarmUpStartup`(postStartupActivity)后台预热,首次交互零等待 |
+| P1 | VFS 批量 create 事件(分支切换)触发 N 次全量重建 | `scheduleDebouncedRebuild()`:1500ms 防抖合并为一次 |
+| P2 | `.idea/workspace.xml` 高频变更触发无谓重索引(项目目录名含 "mapper" 误匹配) | `isRelevantXml` 排除 `/.idea/` 与 `/target/`(后者兼防构建产物误匹配) |
+| P2 | 切换标签无条件重绘全部 gutter 图标 | 按 `document.modificationStamp` + 文件图章跳过未变重绘 |
+| P2 | 悬停/点击热路径每次新建 3 个 Regex | 提升为 companion `val`(编译一次) |
+| P3 | 索引重建线程不安全、后台读文件无 ReadAction | 协调器 `@Synchronized` + 文件读取包裹 `runReadAction`;各索引 `ensureInitialized` 统一回退到协调器 |
+| P3 | 文档编辑后图标/悬停下划线不刷新(需切换标签) | `DocumentListener` 触发(经 invokeLater 回 EDT)按新图章重绘 |
+
+已知取舍:未保存的编辑内容不参与解析(索引基于磁盘内容),保存后自动刷新;大文件的首次解析仍为单文件毫秒级正则扫描。
+
+---
+
 ## 九、验证方案
 
 ### 9.1 自动化

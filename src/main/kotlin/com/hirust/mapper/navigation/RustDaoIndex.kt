@@ -32,8 +32,31 @@ class RustDaoIndex(private val project: Project) {
     @Volatile
     private var initialized = false
 
+    /**
+     * 懒加载入口:预热完成前用户已触发交互时,同步回退到协调扫描。
+     * 正常情况下启动预热(MapperWarmUpStartup)已在后台完成,此处直接命中。
+     */
     fun ensureInitialized() {
-        if (!initialized) rebuildIndex()
+        if (!initialized) MapperScanCoordinator.getInstance(project).rebuildAll()
+    }
+
+    /** 协调扫描开始:清空 namespace 索引(文件级解析缓存按 modStamp 保留) */
+    fun beginScan() {
+        namespaceIndex.clear()
+    }
+
+    /**
+     * 协调扫描喂数据:用协调器已读取的内容解析并登记该文件的 DAO,
+     * 避免每个索引各自读盘造成重复全项目 IO。
+     */
+    fun acceptFileContent(vf: VirtualFile, content: String) {
+        if (!vf.isValid) return
+        val stamp = vf.modificationStamp
+        val daos = if (content.contains("#[dao")) RustSourceParser.parse(content) else emptyList()
+        fileCache[vf] = stamp to daos
+        for (dao in daos) {
+            namespaceIndex[dao.namespace] = DaoLocation(vf, dao)
+        }
     }
 
     fun rebuildIndex() {

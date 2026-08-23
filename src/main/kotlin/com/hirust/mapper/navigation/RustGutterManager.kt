@@ -54,6 +54,12 @@ class RustGutterManager(private val project: Project) : FileEditorManagerListene
     }
 
     private fun paintGutter(editor: Editor, vFile: VirtualFile) {
+        // P2:文件与文档均未变化时跳过重绘(切换标签不再反复增删 highlighter)
+        val stamp = editor.document.modificationStamp
+        if (editor.getUserData(PAINTED_STAMP_KEY) == stamp &&
+            editor.getUserData(CURRENT_FILE_KEY) == vFile
+        ) return
+
         val daos = try {
             // getParsed 内部按 Document 坐标(\n 归一化)解析,
             // 因此这里用 document 行号寻址时偏移天然对齐
@@ -133,7 +139,28 @@ class RustGutterManager(private val project: Project) : FileEditorManagerListene
             }
         }
         editor.putUserData(RENDERED_KEY, created)
+        editor.putUserData(CURRENT_FILE_KEY, vFile)
+        editor.putUserData(PAINTED_STAMP_KEY, stamp)
+        attachDocumentListener(editor)
         log.debug("[hirust-mapper-navigator] Gutter painted: ${created.size} markers in ${vFile.name}")
+    }
+
+    /**
+     * P3:文档变更时重绘图标与悬停下划线(此前需切换标签才刷新)。
+     * 每编辑器仅挂一次监听;重绘经 invokeLater 回到 EDT。
+     */
+    private fun attachDocumentListener(editor: Editor) {
+        if (editor.getUserData(DOC_LISTENER_ATTACHED_KEY) == true) return
+        editor.putUserData(DOC_LISTENER_ATTACHED_KEY, true)
+        editor.document.addDocumentListener(object :
+            com.intellij.openapi.editor.event.DocumentListener {
+            override fun documentChanged(event: com.intellij.openapi.editor.event.DocumentEvent) {
+                val vf = editor.getUserData(CURRENT_FILE_KEY) ?: return
+                ApplicationManager.getApplication().invokeLater({
+                    if (!editor.isDisposed) install(editor, vf)
+                }, project.disposed)
+            }
+        })
     }
 
     // ------------------------------------------------------------------
@@ -248,6 +275,15 @@ class RustGutterManager(private val project: Project) : FileEditorManagerListene
         )
         private val PREV_CURSOR_KEY = Key.create<java.awt.Cursor>(
             "hirust.mapper.navigator.hover.prevCursor"
+        )
+        private val PAINTED_STAMP_KEY = Key.create<Long>(
+            "hirust.mapper.navigator.painted.stamp"
+        )
+        private val CURRENT_FILE_KEY = Key.create<VirtualFile>(
+            "hirust.mapper.navigator.current.file"
+        )
+        private val DOC_LISTENER_ATTACHED_KEY = Key.create<Boolean>(
+            "hirust.mapper.navigator.doc.listener.attached"
         )
     }
 }

@@ -19,7 +19,7 @@
         ]]>
     </description>
     <vendor email="dengpju@hirust.com" url="https://hirust.com">hirust</vendor>
-    <version>1.2.0</version>
+    <version>1.2.1</version>
     <icon>icons/pluginIcon.svg</icon>
 
     <depends>com.intellij.modules.platform</depends>
@@ -52,6 +52,12 @@
             serviceImplementation="com.hirust.mapper.navigation.MapperPathsConfig"/>
         <projectService
             serviceImplementation="com.hirust.mapper.navigation.RustDaoIndex"/>
+        <projectService
+            serviceImplementation="com.hirust.mapper.navigation.MapperScanCoordinator"/>
+
+        <!-- 启动预热:后台线程完成一次协调扫描,首次交互零等待 -->
+        <postStartupActivity
+            implementation="com.hirust.mapper.navigation.MapperWarmUpStartup"/>
     </extensions>
 
     <!-- VFS 文件变更监听(XML 与 .rs 双侧索引刷新)。

@@ -33,8 +33,9 @@ class XmlIndexRefreshListener(private val project: Project) : BulkFileListener {
                     when (event) {
                         is VFileCreateEvent -> {
                             rustIndex.refreshFile(file)
-                            // 新增 .rs 可能引入 with_mapper_paths 配置,同步刷新 XML 收集模式
-                            XmlNamespaceIndex.getInstance(project).rebuildIndex()
+                            // 新增 .rs 可能引入 with_mapper_paths 配置;
+                            // 分支切换/外部刷新会批量报 create 事件,防抖合并为一次协调重建
+                            MapperScanCoordinator.getInstance(project).scheduleDebouncedRebuild()
                         }
                         is VFileDeleteEvent,
                         is VFileContentChangeEvent -> rustIndex.refreshFile(file)
@@ -75,6 +76,9 @@ class XmlIndexRefreshListener(private val project: Project) : BulkFileListener {
 
     private fun isRelevantXml(file: VirtualFile): Boolean {
         val path = file.path.lowercase()
+        // 排除 IDE 元数据(本插件项目目录名含 "mapper",.idea/workspace.xml 每次 UI 操作都会变更)
+        // 与 Rust 构建产物目录(其中的资源副本会造成无谓索引与误匹配)
+        if (path.contains("/.idea/") || path.contains("/target/")) return false
         return path.contains("mapper") || path.contains("resources")
     }
 }

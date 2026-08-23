@@ -1,17 +1,15 @@
 package com.hirust.mapper.navigation
 
 import com.intellij.openapi.diagnostic.Logger
-import com.intellij.openapi.fileTypes.FileTypeManager
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.vfs.VirtualFile
-import com.intellij.openapi.vfs.VfsUtil
-import com.intellij.psi.search.FileTypeIndex
-import com.intellij.psi.search.GlobalSearchScope
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * 从 Rust 源码中提取 `.with_mapper_paths(vec![...])` 配置，
  * 解析出 XML mapper 文件的 glob 路径模式。
+ *
+ * 扫描入口由 [MapperScanCoordinator] 统一协调(单次 .rs 遍历),
+ * 本类只负责从【已读取的内容】提取模式,不再自行读盘。
  */
 class MapperPathsConfig(private val project: Project) {
 
@@ -21,33 +19,13 @@ class MapperPathsConfig(private val project: Project) {
 
     val patterns: List<String> get() = _patterns.toList()
 
-    fun refresh() {
+    /** 协调扫描开始:清空旧模式 */
+    fun beginScan() {
         _patterns.clear()
-        val scope = GlobalSearchScope.projectScope(project)
-        // FilenameIndex.getVirtualFilesByName 按"完整文件名"匹配,无法按扩展名检索,
-        // 使用 FileTypeIndex(RustRover 中为 RustFileType,否则 PlainText)+ 扩展名过滤
-        val rsFileType = try {
-            FileTypeManager.getInstance().getFileTypeByExtension("rs")
-        } catch (e: Exception) {
-            log.warn("[hirust-mapper-navigator] Failed to resolve rs file type: ${e.message}")
-            return
-        }
-        val virtualFiles = FileTypeIndex.getFiles(rsFileType, scope)
-            .filter { it.extension.equals("rs", ignoreCase = true) }
-
-        for (vf in virtualFiles) {
-            extractPatternsFromFile(vf)
-        }
-        log.info("[hirust-mapper-navigator] MapperPathsConfig refreshed: ${_patterns.size} patterns " +
-                "from ${virtualFiles.size} rs files")
     }
 
-    private fun extractPatternsFromFile(vf: VirtualFile) {
-        val content = try {
-            VfsUtil.loadText(vf)
-        } catch (e: Exception) {
-            return
-        }
+    /** 协调扫描喂数据:从已读取的文件内容提取模式(避免重复 IO) */
+    fun acceptFileContent(content: String) {
         if (!content.contains("with_mapper_paths")) return
         extractStringLiteralsFromText(content)
     }
