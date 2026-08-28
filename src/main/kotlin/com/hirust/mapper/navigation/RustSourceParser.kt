@@ -8,8 +8,11 @@ package com.hirust.mapper.navigation
  *
  * 映射规则(经确认):
  *   - 语句 id:宏 id 参数优先,缺省用函数名
- *   - 语句类型:mapper_insert→insert / mapper_update→update / mapper_delete→delete,
- *              其余(mapper_select / mapper_query / 未知 mapper_*)→select
+ *   - 语句类型:宏 kind 参数优先(kind = "insert" 等,白名单内),
+ *              缺省按宏名映射:mapper_insert→insert / mapper_update→update /
+ *              mapper_delete→delete,其余(mapper_select / mapper_query / 未知 mapper_*)→select
+ *   - xml 属性:#[dao(namespace = "...", xml = "...")] 中的 xml 相对路径,
+ *              供索引层做逐 DAO 的精确文件定位(见 [DaoInfo.xmlAttr])
  */
 data class MethodInfo(
     /** 语句 id(宏 id 参数,缺省为函数名) */
@@ -39,8 +42,14 @@ data class DaoInfo(
     val attrNameOffset: Int,
     /** impl/struct 关键字偏移,找不到时等于 attrOffset */
     val implOffset: Int,
-    /** impl/struct 的类型名,找不到时为空串 */
+    /** impl/struct 的类型名,找不到时为空串;名字缺失时回退为关键字本身 */
     val implName: String,
+    /** impl/struct 类型名标识符偏移(词级点击锚点);名字缺失时为 -1 */
+    val implNameOffset: Int,
+    /** `#[dao(xml = "...")]` 属性值(相对 crate 根的路径),缺省为空串 */
+    val xmlAttr: String,
+    /** xml 属性值(引号内第一个字符)偏移;缺省 -1 */
+    val xmlAttrOffset: Int,
     val methods: List<MethodInfo>
 )
 
@@ -48,8 +57,13 @@ object RustSourceParser {
 
     private val NS_PARAM = Regex("""\bnamespace\s*=\s*"([^"]*)"""")
     private val ID_PARAM = Regex("""\bid\s*=\s*"([^"]*)"""")
+    private val KIND_PARAM = Regex("""\bkind\s*=\s*"([^"]*)"""")
+    private val XML_PARAM = Regex("""\bxml\s*=\s*"([^"]*)"""")
     private val IMPL_KEYWORD = Regex("""\b(impl|struct)\b""")
     private val WORD_CHARS: (Char) -> Boolean = { it.isLetterOrDigit() || it == '_' }
+
+    /** kind 参数合法值(与 XML 语句标签一致) */
+    private val KIND_TAGS = setOf("select", "insert", "update", "delete")
 
     /** 函数修饰关键字(mapper 属性与 fn 之间允许出现) */
     private val FN_MODIFIERS = setOf("pub", "async", "unsafe", "const", "extern", "default", "static")
@@ -86,7 +100,13 @@ object RustSourceParser {
                     if (ns.isNullOrEmpty()) continue
                     // namespace 字面量绝对偏移 = 参数文本起始 + 参数内相对偏移
                     val nsAbsOffset = attr.paramsStart + nsMatch.groups[1]!!.range.first
-                    current = Builder(ns, nsAbsOffset, attr.start, attr.nameStart, attr.end)
+                    // xml 属性(可选):逐 DAO 的精确文件定位通道
+                    val xmlMatch = attr.params?.let { XML_PARAM.find(it) }
+                    val xmlAttr = xmlMatch?.groupValues?.get(1) ?: ""
+                    val xmlAbsOffset = if (xmlAttr.isNotEmpty() && xmlMatch != null) {
+                        attr.paramsStart + xmlMatch.groups[1]!!.range.first
+                    } else -1
+                    current = Builder(ns, nsAbsOffset, attr.start, attr.nameStart, attr.end, xmlAttr, xmlAbsOffset)
                     builders += current
                 }
                 isMapperMethodAttr(attr.name) && current != null -> {
@@ -98,11 +118,14 @@ object RustSourceParser {
                     } else {
                         fn.name to -1
                     }
+                    // 语句类型:kind 参数优先(白名单内),缺省按宏名映射
+                    val kindFromParam = attr.params?.let { KIND_PARAM.find(it) }?.groupValues?.get(1)
+                    val stmtTag = kindFromParam?.takeIf { it in KIND_TAGS } ?: stmtTagFor(attr.name)
                     current.methods += MethodInfo(
                         id = id,
                         idLiteralOffset = idLiteral,
                         fnName = fn.name,
-                        stmtTag = stmtTagFor(attr.name),
+                        stmtTag = stmtTag,
                         macroName = attr.name,
                         macroOffset = attr.start,
                         macroNameOffset = attr.nameStart,
@@ -122,8 +145,11 @@ object RustSourceParser {
                 nsLiteralOffset = b.nsLiteralOffset,
                 attrOffset = b.attrStart,
                 attrNameOffset = b.attrNameOffset,
-                implOffset = impl?.first ?: b.attrStart,
-                implName = impl?.second ?: "",
+                implOffset = impl?.implOffset ?: b.attrStart,
+                implName = impl?.name ?: "",
+                implNameOffset = impl?.nameOffset ?: -1,
+                xmlAttr = b.xmlAttr,
+                xmlAttrOffset = b.xmlAttrOffset,
                 methods = b.methods.toList()
             )
         }
@@ -300,8 +326,11 @@ object RustSourceParser {
     // impl 定位
     // ------------------------------------------------------------------
 
-    /** 在 [from, limit) 中找第一个 impl/struct 关键字及其类型名 */
-    private fun findImplName(content: String, from: Int, limit: Int): Pair<Int, String>? {
+    /** impl/struct 定位结果:关键字偏移 + 类型名偏移 + 类型名 */
+    data class ImplRef(val implOffset: Int, val nameOffset: Int, val name: String)
+
+    /** 在 [from, limit) 中找第一个 impl/struct 关键字及其类型名;名字缺失时 nameOffset = -1 */
+    private fun findImplName(content: String, from: Int, limit: Int): ImplRef? {
         val region = content.substring(from, limit.coerceAtMost(content.length))
         val m = IMPL_KEYWORD.find(region) ?: return null
         var p = from + m.range.last + 1
@@ -317,8 +346,8 @@ object RustSourceParser {
         }
         val nameStart = p
         while (p < n && WORD_CHARS(content[p])) p++
-        if (p == nameStart) return (from + m.range.first) to m.groupValues[1]
-        return (from + m.range.first) to content.substring(nameStart, p)
+        if (p == nameStart) return ImplRef(from + m.range.first, -1, m.groupValues[1])
+        return ImplRef(from + m.range.first, nameStart, content.substring(nameStart, p))
     }
 
     /** 匹配 '<' 的 '>'(粗略跳过字符串) */
@@ -348,7 +377,9 @@ object RustSourceParser {
         val attrStart: Int,
         val attrNameOffset: Int,
         /** #[dao(...)] 属性结束(`]` 之后)偏移 */
-        val attrEnd: Int
+        val attrEnd: Int,
+        val xmlAttr: String,
+        val xmlAttrOffset: Int
     ) {
         val methods = mutableListOf<MethodInfo>()
     }

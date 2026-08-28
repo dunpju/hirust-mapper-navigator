@@ -149,12 +149,21 @@ class RustReferenceProvider : PsiReferenceProvider() {
                     dao.namespace
                 )
             }
+            // impl 类型名(v1.2.2:无 id 字面量的代码风格下,fn 名/类型名是主要点击入口)
+            if (dao.implNameOffset >= 0 && dao.implName.isNotEmpty()) {
+                val start = dao.implNameOffset - base
+                refs += NamespaceToXmlReference(
+                    leaf,
+                    TextRange(start, start + dao.implName.length),
+                    dao.namespace
+                )
+            }
             // dao 宏名
             refs += MacroDefinitionReference(
                 leaf, "dao",
                 TextRange(dao.attrNameOffset - base, dao.attrNameOffset - base + 3)
             )
-            // 方法宏名 / id 字面量
+            // 方法宏名 / id 字面量 / fn 名
             for (m in dao.methods) {
                 refs += MacroDefinitionReference(
                     leaf, m.macroName,
@@ -164,6 +173,11 @@ class RustReferenceProvider : PsiReferenceProvider() {
                     val start = m.idLiteralOffset - base
                     refs += RustIdToXmlStatementReference(leaf, TextRange(start, start + m.id.length))
                 }
+                // fn 名:id 缺省为 fn 名时是唯一入口;有 id 参数时经 findMethodAt 反查同样成立
+                refs += RustIdToXmlStatementReference(
+                    leaf,
+                    TextRange(m.fnOffset - base, (m.fnOffset + m.fnName.length) - base)
+                )
             }
         }
         return refs.toTypedArray()

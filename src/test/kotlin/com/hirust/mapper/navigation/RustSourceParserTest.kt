@@ -232,4 +232,108 @@ class RustSourceParserTest {
         """.trimIndent()
         assertEquals("GenericDao", RustSourceParser.parse(content)[0].implName)
     }
+
+    // ------------------------------------------------------------------
+    // v1.2.2:kind 参数 / xml 属性 / implNameOffset / 点号 namespace
+    // ------------------------------------------------------------------
+
+    /** 目标项目(hirust-error-book)的真实代码形态 */
+    private val dotNamespaceSample = """
+        use hirust_mapper::{dao, Result, SqlSessionFactory};
+
+        pub struct SubjectDao {
+            __hm_factory: std::sync::Arc<SqlSessionFactory>,
+        }
+
+        #[dao(namespace = "dao.subject", xml = "mappers/SubjectMapper.xml")]
+        impl SubjectDao {
+            /// 全部学科
+            #[mapper_query]
+            pub async fn list_all(&self) -> Result<Vec<Subject>> {}
+
+            #[mapper_query(kind = "insert")]
+            pub async fn create(&self, s: &Subject) -> Result<u64> {}
+
+            #[mapper_query(kind = "update", id = "soft_delete")]
+            pub async fn delete(&self, subject_id: i64) -> Result<u64> {}
+        }
+    """.trimIndent()
+
+    @Test
+    fun `kind param overrides macro name mapping`() {
+        val daos = RustSourceParser.parse(dotNamespaceSample)
+        val methods = daos[0].methods.associateBy { it.fnName }
+        // 裸 mapper_query → select
+        assertEquals("select", methods["list_all"]!!.stmtTag)
+        // kind 参数优先:mapper_query + kind="insert" → insert
+        assertEquals("insert", methods["create"]!!.stmtTag)
+        // kind 与 id 参数并存(参数顺序颠倒,目标项目真实形态)
+        assertEquals("update", methods["delete"]!!.stmtTag)
+        assertEquals("soft_delete", methods["delete"]!!.id)
+    }
+
+    @Test
+    fun `invalid kind value falls back to macro name mapping`() {
+        val content = """
+            #[dao(namespace = "crate::a::k_dao")]
+            impl KDao {
+                #[mapper_query(kind = "exec")]
+                fn q(&self) {}
+            }
+        """.trimIndent()
+        assertEquals("select", RustSourceParser.parse(content)[0].methods[0].stmtTag)
+    }
+
+    @Test
+    fun `xml attr extracted with offset into quotes`() {
+        val daos = RustSourceParser.parse(dotNamespaceSample)
+        val dao = daos[0]
+        assertEquals("mappers/SubjectMapper.xml", dao.xmlAttr)
+        // 偏移指向引号内第一个字符
+        assertEquals('m', dotNamespaceSample[dao.xmlAttrOffset])
+        assertEquals('"', dotNamespaceSample[dao.xmlAttrOffset - 1])
+        assertEquals(
+            "mappers/SubjectMapper.xml",
+            dotNamespaceSample.substring(dao.xmlAttrOffset, dao.xmlAttrOffset + dao.xmlAttr.length)
+        )
+    }
+
+    @Test
+    fun `xml attr defaults when absent`() {
+        val daos = RustSourceParser.parse(sample)
+        assertEquals("", daos[0].xmlAttr)
+        assertEquals(-1, daos[0].xmlAttrOffset)
+    }
+
+    @Test
+    fun `impl name offset points at type name`() {
+        val daos = RustSourceParser.parse(dotNamespaceSample)
+        val dao = daos[0]
+        assertEquals("SubjectDao", dao.implName)
+        assertTrue(dao.implNameOffset > 0)
+        assertEquals('S', dotNamespaceSample[dao.implNameOffset])
+        assertEquals(
+            "SubjectDao",
+            dotNamespaceSample.substring(dao.implNameOffset, dao.implNameOffset + dao.implName.length)
+        )
+    }
+
+    @Test
+    fun `impl name offset is minus one when name missing`() {
+        // impl 后直接 '{',无类型名
+        val content = "#[dao(namespace = \"crate::a::n_dao\")]\nimpl {\n    #[mapper_query]\n    fn q(&self) {}\n}"
+        val dao = RustSourceParser.parse(content)[0]
+        assertEquals(-1, dao.implNameOffset)
+        // implName 回退为关键字本身(保持 findDaoAt 区间语义)
+        assertEquals("impl", dao.implName)
+    }
+
+    @Test
+    fun `dot style namespace parsed`() {
+        val daos = RustSourceParser.parse(dotNamespaceSample)
+        assertEquals(1, daos.size)
+        assertEquals("dao.subject", daos[0].namespace)
+        assertEquals('d', dotNamespaceSample[daos[0].nsLiteralOffset])
+        assertEquals(3, daos[0].methods.size)
+    }
 }

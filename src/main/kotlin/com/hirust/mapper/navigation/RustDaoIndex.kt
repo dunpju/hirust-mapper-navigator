@@ -109,6 +109,14 @@ class RustDaoIndex(private val project: Project) {
         return daos
     }
 
+    /**
+     * 全部已登记 DAO 的裸访问器。
+     * 刻意【不做 ensureInitialized】:XmlNamespaceIndex 在协调扫描(rebuildAll → rebuildIndex)
+     * 中调用本方法,若在此触发 ensureInitialized 会同线程重入 @Synchronized 的 rebuildAll,
+     * 造成嵌套全量重建。仅在协调流程已就绪的前提下使用。
+     */
+    fun allDaos(): List<DaoLocation> = namespaceIndex.values.toList()
+
     /** 按 namespace 查找 DAO(精确匹配优先,退化到末段匹配) */
     fun findDaoByNamespace(namespace: String): DaoLocation? {
         ensureInitialized()

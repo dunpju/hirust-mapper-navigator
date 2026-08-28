@@ -57,7 +57,7 @@ class MapperScanCoordinator(private val project: Project) {
             val content = app.runReadAction<String?> {
                 NavigationUtil.loadTextDocumentAligned(vf)
             } ?: continue
-            pathsConfig.acceptFileContent(content)
+            pathsConfig.acceptFileContent(vf, content)
             daoIndex.acceptFileContent(vf, content)
         }
 

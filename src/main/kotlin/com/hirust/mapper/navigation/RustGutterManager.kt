@@ -68,11 +68,10 @@ class RustGutterManager(private val project: Project) : FileEditorManagerListene
             log.warn("[hirust-mapper-navigator] Gutter parse failed: ${e.message}")
             return
         }
-        if (daos.isEmpty()) return
 
         val document = editor.document
         val markup = editor.markupModel
-        // 清掉旧标记后重绘(防重复)
+        // 清掉旧标记(在 isEmpty 判断之前:删光 #[dao] 后图标不能残留)
         val old = editor.getUserData(RENDERED_KEY)
         if (old != null) {
             old.forEach { markup.removeHighlighter(it) }
@@ -81,33 +80,57 @@ class RustGutterManager(private val project: Project) : FileEditorManagerListene
         if (oldUnderlines != null) {
             oldUnderlines.forEach { markup.removeHighlighter(it) }
         }
-        val created = mutableListOf<RangeHighlighter>()
 
-        // 收集可跳转字面量区间(namespace / id),供 Ctrl+悬停动态绘制超链接样式
-        val linkRanges = mutableListOf<com.intellij.openapi.util.TextRange>()
+        if (daos.isEmpty()) {
+            editor.putUserData(RENDERED_KEY, mutableListOf())
+            editor.putUserData(LINK_RANGES_KEY, mutableListOf())
+            editor.putUserData(CURRENT_FILE_KEY, vFile)
+            editor.putUserData(PAINTED_STAMP_KEY, stamp)
+            return
+        }
+
+        // 单次解析:dao→XML 文件、method→XML 语句;gutter 图标与悬停区间复用同一结果
+        val xmlIndex = XmlNamespaceIndex.getInstance(project)
+        val daoXml = HashMap<DaoInfo, VirtualFile?>()
+        val methodStmt = HashMap<MethodInfo, XmlNamespaceIndex.XmlStatementLocation?>()
         for (dao in daos) {
-            if (dao.nsLiteralOffset >= 0 && dao.namespace.isNotEmpty()) {
-                linkRanges.add(
-                    com.intellij.openapi.util.TextRange(
-                        dao.nsLiteralOffset,
-                        (dao.nsLiteralOffset + dao.namespace.length).coerceAtMost(document.textLength)
-                    )
-                )
+            daoXml[dao] = xmlIndex.findXmlFile(dao.namespace)
+            for (m in dao.methods) {
+                methodStmt[m] = xmlIndex.findStatement(dao.namespace, m.id, m.stmtTag)
+            }
+        }
+
+        // 收集可跳转区间(namespace/id 字面量 + impl 名/fn 名/宏名),
+        // 供 Ctrl+悬停动态绘制超链接样式;仅收录可解析项(能力与视觉提示一致)
+        val linkRanges = mutableListOf<com.intellij.openapi.util.TextRange>()
+        fun addLinkRange(start: Int, end: Int) {
+            val s = start.coerceIn(0, document.textLength)
+            val e = end.coerceIn(s, document.textLength)
+            if (e > s) linkRanges += com.intellij.openapi.util.TextRange(s, e)
+        }
+        for (dao in daos) {
+            if (daoXml[dao] != null) {
+                if (dao.nsLiteralOffset >= 0 && dao.namespace.isNotEmpty()) {
+                    addLinkRange(dao.nsLiteralOffset, dao.nsLiteralOffset + dao.namespace.length)
+                }
+                if (dao.implNameOffset >= 0 && dao.implName.isNotEmpty()) {
+                    addLinkRange(dao.implNameOffset, dao.implNameOffset + dao.implName.length)
+                }
             }
             for (m in dao.methods) {
-                if (m.idLiteralOffset >= 0 && m.id.isNotEmpty()) {
-                    linkRanges.add(
-                        com.intellij.openapi.util.TextRange(
-                            m.idLiteralOffset,
-                            (m.idLiteralOffset + m.id.length).coerceAtMost(document.textLength)
-                        )
-                    )
+                if (methodStmt[m] != null) {
+                    if (m.idLiteralOffset >= 0 && m.id.isNotEmpty()) {
+                        addLinkRange(m.idLiteralOffset, m.idLiteralOffset + m.id.length)
+                    }
+                    addLinkRange(m.fnOffset, m.fnOffset + m.fnName.length)
+                    addLinkRange(m.macroNameOffset, m.macroNameOffset + m.macroName.length)
                 }
             }
         }
         editor.putUserData(LINK_RANGES_KEY, linkRanges)
         attachHover(editor)
 
+        val created = mutableListOf<RangeHighlighter>()
         fun addMarker(lineOffset: Int, tooltip: String, nav: () -> Unit) {
             val line = document.getLineNumber(lineOffset.coerceIn(0, document.textLength - 1))
             val rh = markup.addLineHighlighter(
@@ -119,17 +142,16 @@ class RustGutterManager(private val project: Project) : FileEditorManagerListene
             created.add(rh)
         }
 
-        val xmlIndex = XmlNamespaceIndex.getInstance(project)
         for (dao in daos) {
             // impl 行图标 → XML <mapper>
-            val xmlFile = xmlIndex.findXmlFile(dao.namespace) ?: continue
+            val xmlFile = daoXml[dao] ?: continue
             addMarker(dao.implOffset, "跳转到 XML mapper: ${xmlFile.name}") {
                 val target = xmlIndex.getMapperInfo(xmlFile)?.mapperTagOffset ?: 0
                 OpenFileDescriptor(project, xmlFile, target).navigate(true)
             }
             // 方法宏行图标 → XML 语句(偏移已按 Document 坐标归一化)
             for (m in dao.methods) {
-                val stmt = xmlIndex.findStatement(dao.namespace, m.id, m.stmtTag) ?: continue
+                val stmt = methodStmt[m] ?: continue
                 addMarker(m.macroOffset, "跳转到 XML <${stmt.statement.tag} id=\"${stmt.statement.id}\">") {
                     OpenFileDescriptor(
                         project, stmt.file,
@@ -204,8 +226,12 @@ class RustGutterManager(private val project: Project) : FileEditorManagerListene
         val attrs = editor.colorsScheme.getAttributes(
             com.intellij.openapi.editor.colors.EditorColors.REFERENCE_HYPERLINK_COLOR
         )
+        // 双端越界防护:文档编辑后、重绘前的窗口期可能命中过期区间
+        val textLen = editor.document.textLength
+        val hlStart = hit.startOffset.coerceIn(0, textLen)
+        val hlEnd = hit.endOffset.coerceIn(hlStart, textLen)
         val hl = editor.markupModel.addRangeHighlighter(
-            hit.startOffset, hit.endOffset,
+            hlStart, hlEnd,
             HighlighterLayer.HYPERLINK, attrs,
             com.intellij.openapi.editor.markup.HighlighterTargetArea.EXACT_RANGE
         )

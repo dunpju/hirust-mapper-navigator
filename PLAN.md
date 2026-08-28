@@ -446,6 +446,32 @@ class RustLineMarkerProvider : LineMarkerProvider {
 
 ---
 
+## 十四、踩坑记录(v1.2.2:hirust-error-book 导航失效修复)
+
+背景:目标项目为 workspace 布局(项目根 `hirust-error-book/`,crate 在 `server/` 子目录),
+现象为跳转能力不对称 —— XML namespace→Rust DAO 正常,其余 6 项功能(全部 Rust→XML、
+XML 语句 id→Rust、悬停提示)失效。依赖矩阵定位:**失效功能全部依赖 XmlNamespaceIndex,
+正常功能全部不依赖 → 该索引为空(0 个 XML)**。
+
+| # | 问题 | 症状 | 修复 |
+|---|------|------|------|
+| 1 | **with_mapper_paths glob 按 project.basePath 解析,但模式实际相对 crate 根**(运行时 `SqlSessionFactory::build(config, ".")` 以 crate 根为 CWD;`server/src/db.rs` 声明 `mappers/**/*.xml`,XML 在 `server/mappers/`) | `Directory not found: [mappers]` 警告,索引 0 个 XML,6 项功能失效 | `MapperPathsConfig` 记录每条模式的【声明文件 crate 根】(向上找 Cargo.toml);`XmlNamespaceIndex` 按 `[crate根, 项目根]` 优先级解析 |
+| 2 | 回退扫描只在 patterns 为空时触发;且过滤 `contains("/mapper/")` 匹配不到复数 `mappers` | glob 落空时无兜底 | 前两层通道(glob + `#[dao(xml=...)]` 补录)总数为 0 也触发回退;过滤改为按路径段比较(mapper/mappers) |
+| 3 | `#[dao(xml = "...")]` 属性从未被利用(目标项目全部 DAO 都带该属性) | — | 新增精确补录通道:`DaoInfo.xmlAttr/xmlAttrOffset`,相对 DAO 文件 crate 根定位,可独立于 with_mapper_paths 引导索引 |
+| 4 | **目标代码风格无 `id="..."` 字面量**(`#[mapper_query]` 裸宏,id 缺省=fn 名,"方法名即 statement_id"),Rust 侧点击只处理字符串字面量 | 即使索引修好,"Rust 语句 id→XML"仍无处可点 | GotoDeclarationHandler 增加词级路径:点击 fn 名/宏名→XML 语句,点击 impl 类型名→`<mapper>`;**精确 span 匹配**(词起点==解析器偏移且文本相等)而非区间包含,避免劫持同区域 Rust 自身导航(如 `pub struct SubjectDao` 处的同名出现) |
+| 5 | `stmtTagFor` 忽略 `kind = "insert"` 参数 → stmtTag 错算 select | 标签精确匹配错误(靠 id-only 回退兜住才未致命) | kind 参数(白名单 select/insert/update/delete)优先于宏名映射 |
+| 6 | `isValidNamespace` 要求 `::`,点号风格 namespace(`dao.subject`)被拒 | 纯文本模式(非 RustRover IDE)的 namespace 引用永远 resolve 失败 | 放宽为接受 `::` 或 `.` 分隔 |
+| 7 | `.rs` 内容变更不刷新 patterns(只处理 create 事件) | 修改 db.rs 里的 glob 后索引不更新直到重启 | content change 时读内容含 `with_mapper_paths` 才防抖重建 |
+| 8 | sample 项目用 `mapper_paths: vec![...]` 结构体字面量,从不匹配提取正则 —— **pattern 通道此前无任何真实用例覆盖**(正是坑 #1 能潜伏的原因) | 回归盲区 | sample 改为 `.with_mapper_paths(vec![...])` 真实调用形态 |
+| 9 | `RustGutterManager.paintGutter` 在 `daos.isEmpty()` 时提前 return,跳过旧 highlighter 清理 | 删光 `#[dao]` 后图标残留 | 清理移到 isEmpty 判断之前 |
+| 10 | 词级点击 fn 名时 Rust 插件自身导航目标与插件目标合并 → 可能弹双 target popup | — | 接受(MybatisX 同款取舍);350ms 自导航窗口保证最终落点正确 |
+
+关键架构决策:`RustDaoIndex.allDaos()` 裸访问器【不做 ensureInitialized】——
+XmlNamespaceIndex 在协调扫描(rebuildAll→rebuildIndex)中调用它,若触发 ensureInitialized
+会同线程重入 `@Synchronized` 的 rebuildAll 造成嵌套全量重建。
+
+---
+
 ## 九、验证方案
 
 ### 9.1 自动化

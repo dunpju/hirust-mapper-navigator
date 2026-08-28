@@ -61,6 +61,7 @@ object NamespacePathResolver {
         return moduleName
     }
 
+    /** 接受 `::` 分隔(crate::module::xxx_dao)与 `.` 分隔(dao.subject)两种 namespace 风格 */
     fun isValidNamespace(namespace: String): Boolean =
-        namespace.isNotBlank() && namespace.contains("::")
+        namespace.isNotBlank() && (namespace.contains("::") || namespace.contains('.'))
 }

@@ -1,9 +1,12 @@
 package com.hirust.mapper.navigation
 
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.fileTypes.FileTypeManager
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
-import com.intellij.openapi.vfs.VfsUtil
+import com.intellij.psi.search.FileTypeIndex
 import com.intellij.psi.search.GlobalSearchScope
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
@@ -72,46 +75,97 @@ class XmlNamespaceIndex(private val project: Project) {
                 "${namespaceToFile.size} namespaces mapped")
     }
 
+    /**
+     * 收集待索引 XML,三层通道(前者命中即不再依赖后者):
+     * 1. with_mapper_paths glob —— 基准依次尝试【声明文件的 crate 根】与【项目根】。
+     *    v1.2.1 及之前仅按项目根解析,在 workspace 布局(crate 在项目根子目录,
+     *    运行时以 crate 根为 CWD)下必落空,导致本索引为空、全部双向跳转失效。
+     * 2. `#[dao(xml = "...")]` 属性精确补录 —— 逐 DAO 的相对路径定位(非 glob),
+     *    在 with_mapper_paths 缺失/写错的项目里可独立引导索引。
+     * 3. 回退扫描 —— 前两层总数为 0 时:项目根 resources/mapper 目录 +
+     *    项目内路径段为 mapper/mappers 的 XML(旧过滤 contains("/mapper/")
+     *    匹配不到复数 mappers,改为按路径段比较)。
+     */
     private fun collectXmlFiles(): List<VirtualFile> {
-        val config = MapperPathsConfig.getInstance(project)
-        val patterns = config.patterns
+        val patterns = MapperPathsConfig.getInstance(project).patterns
 
-        if (patterns.isEmpty()) {
-            log.warn("[hirust-mapper-navigator] No with_mapper_paths found, " +
-                    "using default: resources/mapper/ and any */mapper/*.xml in project")
-            val result = mutableListOf<VirtualFile>()
-            // 回退1:项目根 resources/mapper
-            project.basePath?.let { base ->
-                findDirByRelativePath(base, "resources/mapper")?.let { result += collectFromDirectory(it) }
+        val allFiles = ApplicationManager.getApplication().runReadAction<MutableList<VirtualFile>> {
+            val files = mutableListOf<VirtualFile>()
+
+            // 通道1:glob,基准优先级 crate 根 → 项目根,首个命中即止
+            for (mp in patterns) {
+                for (base in listOfNotNull(mp.baseDirPath, project.basePath)) {
+                    val resolved = resolveGlobPattern(mp.pattern, base)
+                    if (resolved.isNotEmpty()) {
+                        files += resolved
+                        break
+                    }
+                }
             }
-            // 回退2:项目范围内任意路径含 /mapper/ 的 XML(覆盖 src/resources/mapper 等布局)
-            try {
-                val xmlType = com.intellij.openapi.fileTypes.FileTypeManager.getInstance()
-                    .getFileTypeByExtension("xml")
-                com.intellij.psi.search.FileTypeIndex.getFiles(xmlType, GlobalSearchScope.projectScope(project))
-                    .filter { it.path.contains("/mapper/", ignoreCase = true) }
-                    .forEach { result += it }
-            } catch (e: Exception) {
-                log.warn("[hirust-mapper-navigator] Fallback XML scan failed: ${e.message}")
+
+            // 通道2:#[dao(xml = "...")] 精确补录,基准优先级 DAO 文件 crate 根 → 项目根
+            for (loc in RustDaoIndex.getInstance(project).allDaos()) {
+                val rel = loc.dao.xmlAttr
+                if (rel.isEmpty()) continue
+                val bases = listOfNotNull(
+                    MapperPathsConfig.crateRootPathOfUncached(loc.file),
+                    project.basePath
+                ).distinct()
+                for (base in bases) {
+                    val f = LocalFileSystem.getInstance()
+                        .findFileByPath("$base/${rel.replace('\\', '/')}")
+                    if (f != null && f.isValid && !f.isDirectory) {
+                        files += f
+                        break
+                    }
+                }
             }
-            return result.distinctBy { it.path }
+            files
         }
 
-        val allFiles = mutableListOf<VirtualFile>()
-        for (pattern in patterns) {
-            val files = resolveGlobPattern(pattern)
-            allFiles.addAll(files)
+        if (allFiles.isEmpty()) {
+            log.warn("[hirust-mapper-navigator] No XML resolved " +
+                    "(${patterns.size} mapper patterns, ${if (patterns.isEmpty()) "none declared" else "all unresolved"}), " +
+                    "falling back to project scan")
+            allFiles += fallbackScan()
         }
         return allFiles.distinctBy { it.path }
     }
 
-    private fun findDirByRelativePath(basePath: String, relPath: String): VirtualFile? =
-        com.intellij.openapi.vfs.LocalFileSystem.getInstance()
-            .findFileByPath(java.nio.file.Paths.get(basePath, *relPath.split("/").toTypedArray())
-                .toString())
+    /** 回退扫描:项目根 resources/mapper 目录 + 路径段为 mapper/mappers 的项目内 XML */
+    private fun fallbackScan(): List<VirtualFile> {
+        val result = mutableListOf<VirtualFile>()
+        project.basePath?.let { base ->
+            findDirByRelativePath(base, "resources/mapper")?.let { result += collectFromDirectory(it) }
+        }
+        try {
+            ApplicationManager.getApplication().runReadAction<Unit> {
+                val xmlType = FileTypeManager.getInstance().getFileTypeByExtension("xml")
+                FileTypeIndex.getFiles(xmlType, GlobalSearchScope.projectScope(project))
+                    .filter(::isMapperPathFile)
+                    .forEach { result += it }
+            }
+        } catch (e: Exception) {
+            log.warn("[hirust-mapper-navigator] Fallback XML scan failed: ${e.message}")
+        }
+        return result
+    }
 
-    private fun resolveGlobPattern(pattern: String): List<VirtualFile> {
-        val basePath = project.basePath ?: return emptyList()
+    /** 路径中任一目录段为 mapper/mappers(大小写不敏感);排除构建产物与 IDE 元数据 */
+    private fun isMapperPathFile(f: VirtualFile): Boolean {
+        val path = f.path.replace('\\', '/')
+        if (path.contains("/.git/") || path.contains("/target/") ||
+            path.contains("/.idea/") || path.contains("/node_modules/")
+        ) return false
+        return path.split('/').dropLast(1)
+            .any { it.equals("mapper", ignoreCase = true) || it.equals("mappers", ignoreCase = true) }
+    }
+
+    private fun findDirByRelativePath(basePath: String, relPath: String): VirtualFile? =
+        LocalFileSystem.getInstance()
+            .findFileByPath((if (relPath.isEmpty()) basePath else "$basePath/$relPath").replace('\\', '/'))
+
+    private fun resolveGlobPattern(pattern: String, basePath: String): List<VirtualFile> {
         // 统一分隔符并拆段;支持 ** 路径段(如 resources/mapper/**/*.xml)
         val segments = pattern.replace('\\', '/').split('/').filter { it.isNotEmpty() }
         if (segments.isEmpty()) return emptyList()
@@ -122,13 +176,14 @@ class XmlNamespaceIndex(private val project: Project) {
         val literalDirs = dirSegments.filter { it != "**" }
         val ext = filePart.substringAfterLast('.', "").lowercase().ifEmpty { "xml" }
 
-        var dir: VirtualFile? = if (literalDirs.isEmpty()) {
+        val dir: VirtualFile? = if (literalDirs.isEmpty()) {
             findDirByRelativePath(basePath, "")
         } else {
             findDirByRelativePath(basePath, literalDirs.joinToString("/"))
         }
         if (dir == null) {
-            log.warn("[hirust-mapper-navigator] Directory not found: $literalDirs (pattern=$pattern)")
+            log.debug("[hirust-mapper-navigator] Directory not found under base=$basePath: " +
+                    "$literalDirs (pattern=$pattern)")
             return emptyList()
         }
 

@@ -1,5 +1,6 @@
 package com.hirust.mapper.navigation
 
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
@@ -37,8 +38,22 @@ class XmlIndexRefreshListener(private val project: Project) : BulkFileListener {
                             // 分支切换/外部刷新会批量报 create 事件,防抖合并为一次协调重建
                             MapperScanCoordinator.getInstance(project).scheduleDebouncedRebuild()
                         }
-                        is VFileDeleteEvent,
-                        is VFileContentChangeEvent -> rustIndex.refreshFile(file)
+                        is VFileDeleteEvent -> rustIndex.refreshFile(file)
+                        is VFileContentChangeEvent -> {
+                            rustIndex.refreshFile(file)
+                            // 修改现有 .rs 中的 with_mapper_paths(glob 增删)也要重建索引;
+                            // 仅对内容含该配置的文件触发,普通编辑仍走单文件刷新
+                            val mentionsMapperPaths = try {
+                                ApplicationManager.getApplication().runReadAction<String?> {
+                                    NavigationUtil.loadTextDocumentAligned(file)
+                                }?.contains("with_mapper_paths") == true
+                            } catch (_: Exception) {
+                                false
+                            }
+                            if (mentionsMapperPaths) {
+                                MapperScanCoordinator.getInstance(project).scheduleDebouncedRebuild()
+                            }
+                        }
                         is VFilePropertyChangeEvent ->
                             if (event.propertyName == VirtualFile.PROP_NAME) rustIndex.refreshFile(file)
                     }
