@@ -12,12 +12,13 @@ RustRover 插件，为 [hirust-mapper](https://github.com/hirust/hirust-mapper) 
 
 **Rust → XML**（Ctrl+Click 字符串，或点击行号旁图标，RustRover 中生效）：
 - `#[dao(namespace = "...")]` 的 namespace 字符串 / impl 类型名 → 跳到 XML 的 `<mapper>` 标签
+- `#[dao(xml = "mappers/XxxMapper.xml")]` 的路径字符串（v1.2.3）→ 跳到该 XML 文件（相对 crate 根解析）
 - `#[mapper_query(id = "list")]` 的 id 字符串 / **fn 名 / 宏名**（v1.2.2）→ 跳到 XML 对应语句
 
 **id 映射规则**：宏 `id` 参数优先，缺省用函数名。语句类型映射：`kind` 参数优先（`kind = "insert"` → `<insert>`），缺省按宏名映射：`mapper_insert`→`<insert>`、`mapper_update`→`<update>`、`mapper_delete`→`<delete>`、其余（`mapper_query`/`mapper_select` 等）→`<select>`。
 
 **交互体验**（与 IDE 原生超链接一致）：
-- Rust 侧：按住 Ctrl 悬停 namespace/id 字面量 → 原生样式下划线 + 手型光标；Ctrl+左键点击跳转
+- Rust 侧：按住 Ctrl 悬停 namespace/xml 路径/id 字面量 → 原生样式下划线 + 手型光标；Ctrl+左键点击跳转
 - 行号旁小鸟图标点击跳转（Rust 的 impl/方法行、XML 的 mapper/语句行）
 
 ```rust
@@ -102,13 +103,13 @@ git push origin v1.0.0
 gradlew.bat buildPlugin
 ```
 
-构建产物位于 `build/distributions/hirust-mapper-navigator-1.2.2.zip`。
+构建产物位于 `build/distributions/hirust-mapper-navigator-1.2.3.zip`。
 
 ### 在 RustRover 中安装
 
 1. 打开 RustRover → **Settings** → **Plugins**
 2. 点击 **⚙️** → **Install Plugin from Disk...**
-3. 选择 `build/distributions/hirust-mapper-navigator-1.2.2.zip`
+3. 选择 `build/distributions/hirust-mapper-navigator-1.2.3.zip`
 4. 重启 RustRover
 
 ### 调试模式运行

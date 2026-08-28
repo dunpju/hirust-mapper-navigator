@@ -117,6 +117,12 @@ class RustGutterManager(private val project: Project) : FileEditorManagerListene
                     addLinkRange(dao.implNameOffset, dao.implNameOffset + dao.implName.length)
                 }
             }
+            // xml 路径字面量:按自身可解析性判定(独立于 namespace 是否命中)
+            if (dao.xmlAttrOffset >= 0 && dao.xmlAttr.isNotEmpty() &&
+                xmlIndex.findXmlFileByRelativePath(dao.xmlAttr, vFile) != null
+            ) {
+                addLinkRange(dao.xmlAttrOffset, dao.xmlAttrOffset + dao.xmlAttr.length)
+            }
             for (m in dao.methods) {
                 if (methodStmt[m] != null) {
                     if (m.idLiteralOffset >= 0 && m.id.isNotEmpty()) {

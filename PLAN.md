@@ -466,6 +466,11 @@ XML 语句 id→Rust、悬停提示)失效。依赖矩阵定位:**失效功能�
 | 9 | `RustGutterManager.paintGutter` 在 `daos.isEmpty()` 时提前 return,跳过旧 highlighter 清理 | 删光 `#[dao]` 后图标残留 | 清理移到 isEmpty 判断之前 |
 | 10 | 词级点击 fn 名时 Rust 插件自身导航目标与插件目标合并 → 可能弹双 target popup | — | 接受(MybatisX 同款取舍);350ms 自导航窗口保证最终落点正确 |
 
+**v1.2.3 增补**:`#[dao(xml = "mappers/XxxMapper.xml")]` 的路径字面量 Ctrl+Click → 跳到该
+XML 文件(落点 `<mapper>` 标签)。路径解析与索引收集通道 2 共用
+`XmlNamespaceIndex.findXmlFileByRelativePath`(crate 根 → 项目根 → 已索引文件后缀匹配);
+悬停下划线区间同步覆盖该字面量;纯文本模式经 `XmlPathToXmlFileReference` 支持。
+
 关键架构决策:`RustDaoIndex.allDaos()` 裸访问器【不做 ensureInitialized】——
 XmlNamespaceIndex 在协调扫描(rebuildAll→rebuildIndex)中调用它,若触发 ensureInitialized
 会同线程重入 `@Synchronized` 的 rebuildAll 造成嵌套全量重建。

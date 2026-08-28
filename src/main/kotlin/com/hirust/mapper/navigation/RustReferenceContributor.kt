@@ -4,6 +4,7 @@ import com.intellij.openapi.util.TextRange
 import com.intellij.patterns.PlatformPatterns
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
+import com.intellij.psi.PsiManager
 import com.intellij.psi.PsiReference
 import com.intellij.psi.PsiReferenceBase
 import com.intellij.psi.PsiReferenceContributor
@@ -93,12 +94,12 @@ class RustReferenceProvider : PsiReferenceProvider() {
         word == "dao" || word.startsWith("mapper_")
 
     /** 字面量上下文判定结果 */
-    private enum class LiteralContext { NAMESPACE, STATEMENT_ID }
+    private enum class LiteralContext { NAMESPACE, XML_PATH, STATEMENT_ID }
 
     /**
      * 向后扫描源码文本判定字面量上下文:
-     * 取字面量之前最近的 `#[`,若其间无 `]` 且以 `namespace =` / `id =` 结尾,
-     * 且属性名分别是 dao / mapper_*,则命中。
+     * 取字面量之前最近的 `#[`,若其间无 `]` 且以 `namespace =` / `xml =` / `id =` 结尾,
+     * 且属性名分别是 dao(namespace/xml) / mapper_*(id),则命中。
      */
     private fun literalContext(fileText: String, literalStart: Int): LiteralContext? {
         val attrHash = fileText.lastIndexOf("#[", literalStart)
@@ -110,6 +111,8 @@ class RustReferenceProvider : PsiReferenceProvider() {
         return when {
             attrName == "dao" && Regex("""\bnamespace\s*=\s*$""").containsMatchIn(between) ->
                 LiteralContext.NAMESPACE
+            attrName == "dao" && Regex("""\bxml\s*=\s*$""").containsMatchIn(between) ->
+                LiteralContext.XML_PATH
             attrName.startsWith("mapper_") && Regex("""\bid\s*=\s*$""").containsMatchIn(between) ->
                 LiteralContext.STATEMENT_ID
             else -> null
@@ -122,6 +125,8 @@ class RustReferenceProvider : PsiReferenceProvider() {
         return when (ctx) {
             LiteralContext.NAMESPACE ->
                 arrayOf(NamespaceToXmlReference(element))
+            LiteralContext.XML_PATH ->
+                arrayOf(XmlPathToXmlFileReference(element, TextRange(0, element.textLength)))
             LiteralContext.STATEMENT_ID ->
                 arrayOf(RustIdToXmlStatementReference(element, TextRange(0, element.textLength)))
         }
@@ -147,6 +152,14 @@ class RustReferenceProvider : PsiReferenceProvider() {
                     leaf,
                     TextRange(start, start + dao.namespace.length),
                     dao.namespace
+                )
+            }
+            // xml 路径字面量(引号内区间,v1.2.3)
+            if (dao.xmlAttrOffset >= 0 && dao.xmlAttr.isNotEmpty()) {
+                val start = dao.xmlAttrOffset - base
+                refs += XmlPathToXmlFileReference(
+                    leaf,
+                    TextRange(start, start + dao.xmlAttr.length)
                 )
             }
             // impl 类型名(v1.2.2:无 id 字面量的代码风格下,fn 名/类型名是主要点击入口)
@@ -181,6 +194,36 @@ class RustReferenceProvider : PsiReferenceProvider() {
             }
         }
         return refs.toTypedArray()
+    }
+}
+
+/**
+ * `#[dao(xml = "...")]` 中的路径字面量 → XML mapper 文件(v1.2.3)。
+ * 路径相对 crate 根解析(与运行时基准一致),回退项目根与索引后缀匹配,
+ * 见 [XmlNamespaceIndex.findXmlFileByRelativePath]。
+ *
+ * 支持两种宿主元素(与 NamespaceToXmlReference 相同):
+ * - Rust PSI 字符串字面量:rangeInElement 覆盖整个元素(文本含引号)
+ * - 纯文本单叶:rangeInElement 指向引号内子区间
+ */
+class XmlPathToXmlFileReference(
+    element: PsiElement,
+    rangeInElement: TextRange
+) : PsiReferenceBase<PsiElement>(element, rangeInElement) {
+
+    override fun resolve(): PsiElement? {
+        // Rust PSI 模式文本含引号,纯文本模式已是引号内路径,统一剥引号
+        val path = rangeInElement.substring(element.text)
+            .removePrefix("\"").removeSuffix("\"")
+        if (path.isEmpty()) return null
+        val project = element.project
+        val vFile = element.containingFile?.virtualFile ?: return null
+        val xmlIndex = XmlNamespaceIndex.getInstance(project)
+        val xmlFile = xmlIndex.findXmlFileByRelativePath(path, vFile) ?: return null
+        val psiFile = PsiManager.getInstance(project).findFile(xmlFile) ?: return null
+        // 优先落点到 <mapper> 标签;无索引信息时退化为文件
+        val info = xmlIndex.getMapperInfo(xmlFile) ?: return psiFile
+        return psiFile.findElementAt(info.mapperTagOffset) ?: psiFile
     }
 }
 

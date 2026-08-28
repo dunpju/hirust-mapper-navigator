@@ -300,6 +300,34 @@ class XmlNamespaceIndex(private val project: Project) {
         return null
     }
 
+    /**
+     * 按 `#[dao(xml = "...")]` 的相对路径定位 XML 文件
+     * (Ctrl+Click 该字面量与索引收集通道 2 共用本规则):
+     * 基准依次尝试 contextFile 的 crate 根 → 项目根;
+     * 均落空时回退到已索引文件的后缀匹配(路径以 rel 结尾)。
+     */
+    fun findXmlFileByRelativePath(rel: String, contextFile: VirtualFile): VirtualFile? {
+        val normalized = rel.replace('\\', '/').trimStart('/')
+        if (normalized.isEmpty()) return null
+
+        val direct = ApplicationManager.getApplication().runReadAction<VirtualFile?> {
+            val bases = listOfNotNull(
+                MapperPathsConfig.crateRootPathOfUncached(contextFile),
+                project.basePath
+            ).distinct()
+            for (base in bases) {
+                val f = LocalFileSystem.getInstance().findFileByPath("$base/$normalized")
+                if (f != null && f.isValid && !f.isDirectory) return@runReadAction f
+            }
+            null
+        }
+        if (direct != null) return direct
+
+        ensureInitialized()
+        val suffix = "/$normalized"
+        return getIndexedFiles().firstOrNull { it.path.replace('\\', '/').endsWith(suffix) }
+    }
+
     fun getAllNamespaces(): Set<String> {
         ensureInitialized()
         return namespaceToFile.keys.toSet()

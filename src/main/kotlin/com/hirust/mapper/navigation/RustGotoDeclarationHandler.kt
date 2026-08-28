@@ -19,6 +19,7 @@ import com.intellij.psi.PsiFile
  * 处理 .rs 文件中的点击,两条路径:
  * - **字面量路径**:点击字符串字面量
  *   - `#[dao(namespace = "...")]` 的 namespace 字符串 → XML `<mapper>` 标签
+ *   - `#[dao(xml = "...")]` 的路径字符串 → XML 文件(v1.2.3,相对 crate 根解析)
  *   - `#[mapper_*(id = "...")]` 的 id 字符串 → XML 对应语句
  * - **词级路径**(v1.2.2):目标代码风格常见 `#[mapper_query]` 裸宏 / `kind` 参数,
  *   id 缺省为 fn 名,没有 id 字面量可点 —— 支持点击
@@ -70,6 +71,13 @@ class RustGotoDeclarationHandler : GotoDeclarationHandler {
             attrName == "dao" && NS_SUFFIX_REGEX.containsMatchIn(between) -> {
                 val xmlIndex = XmlNamespaceIndex.getInstance(project)
                 val xmlFile = xmlIndex.findXmlFile(literal.value) ?: return null
+                val targetOffset = xmlIndex.getMapperInfo(xmlFile)?.mapperTagOffset ?: 0
+                navigateTo(xmlFile, targetOffset, project)
+            }
+            attrName == "dao" && XML_SUFFIX_REGEX.containsMatchIn(between) -> {
+                val xmlIndex = XmlNamespaceIndex.getInstance(project)
+                // xml 属性是相对 crate 根的路径(与运行时基准一致)
+                val xmlFile = xmlIndex.findXmlFileByRelativePath(literal.value, vFile) ?: return null
                 val targetOffset = xmlIndex.getMapperInfo(xmlFile)?.mapperTagOffset ?: 0
                 navigateTo(xmlFile, targetOffset, project)
             }
@@ -174,6 +182,7 @@ class RustGotoDeclarationHandler : GotoDeclarationHandler {
         /** 属性名匹配(悬停/点击热路径共用,编译一次) */
         private val ATTR_NAME_REGEX = Regex("""^#\[\s*([A-Za-z_][A-Za-z0-9_]*)""")
         private val NS_SUFFIX_REGEX = Regex("""\bnamespace\s*=\s*"?$""")
+        private val XML_SUFFIX_REGEX = Regex("""\bxml\s*=\s*"?$""")
         private val ID_SUFFIX_REGEX = Regex("""\bid\s*=\s*"?$""")
 
         /** 最近一次鼠标左键按下的时间戳;用于区分"点击查询"与"Ctrl 悬停渲染查询" */
