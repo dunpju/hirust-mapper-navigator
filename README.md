@@ -10,6 +10,10 @@ RustRover 插件，为 [hirust-mapper](https://github.com/hirust/hirust-mapper) 
 - `<mapper namespace="crate::app::dao::xxx_dao">` 的 namespace 值 → 跳到 Rust 的 `#[dao(...)]` 属性
 - `<select|insert|update|delete id="xxx">` 的 id 值 → 跳到对应的 `#[mapper_*]` 方法
 
+**XML → XML**（v1.2.4，Ctrl+Click 属性值）：
+- `<include refid="list_where"/>` 的 refid 值 → 同文件的 `<sql id="list_where">` 定义
+- 带命名空间前缀的 `refid="dao.question.list_where"` → 对应 namespace 的 XML 文件中的 `<sql>` 定义
+
 **Rust → XML**（Ctrl+Click 字符串，或点击行号旁图标，RustRover 中生效）：
 - `#[dao(namespace = "...")]` 的 namespace 字符串 / impl 类型名 → 跳到 XML 的 `<mapper>` 标签
 - `#[dao(xml = "mappers/XxxMapper.xml")]` 的路径字符串（v1.2.3）→ 跳到该 XML 文件（相对 crate 根解析）
@@ -103,13 +107,13 @@ git push origin v1.0.0
 gradlew.bat buildPlugin
 ```
 
-构建产物位于 `build/distributions/hirust-mapper-navigator-1.2.3.zip`。
+构建产物位于 `build/distributions/hirust-mapper-navigator-1.2.4.zip`。
 
 ### 在 RustRover 中安装
 
 1. 打开 RustRover → **Settings** → **Plugins**
 2. 点击 **⚙️** → **Install Plugin from Disk...**
-3. 选择 `build/distributions/hirust-mapper-navigator-1.2.3.zip`
+3. 选择 `build/distributions/hirust-mapper-navigator-1.2.4.zip`
 4. 重启 RustRover
 
 ### 调试模式运行
@@ -169,7 +173,7 @@ hirust-mapper-navigator/
 
 - [x] XML → Rust 双向跳转（Ctrl+Click / 行标记：namespace → DAO、语句 id → 方法）
 - [x] Rust → XML 双向跳转（Ctrl+Click / 行标记：namespace 字符串 → `<mapper>`、id 字符串 → 语句）
-- [ ] XML SQL 片段 `<include refid="...">` → `<sql id="...">` 跳转
+- [x] XML SQL 片段 `<include refid="...">` → `<sql id="...">` 跳转（v1.2.4，支持命名空间前缀跨文件）
 - [ ] namespace / 语句 id 自动补全
 - [ ] JPA 提示式语句生成（方法名 → XML 语句骨架）
 - [ ] 数据库表 → Rust 结构体 + DAO + XML 代码生成

@@ -471,6 +471,15 @@ XML 文件(落点 `<mapper>` 标签)。路径解析与索引收集通道 2 共�
 `XmlNamespaceIndex.findXmlFileByRelativePath`(crate 根 → 项目根 → 已索引文件后缀匹配);
 悬停下划线区间同步覆盖该字面量;纯文本模式经 `XmlPathToXmlFileReference` 支持。
 
+**v1.2.4 增补**(§11 后续展望中的 include 跳转):`<include refid="..."/>` 的 refid 值
+Ctrl+Click → `<sql id="...">` 片段定义(落点 `<sql` 标签)。实现要点:
+- 解析层:`XmlMapperParser` 新增 `SqlFragmentInfo`/`sqlFragments`(`<sql\b([^>]*)>` + id 属性)
+- 查找层:`XmlNamespaceIndex.findSqlFragment(refid, currentFile)` —— 当前文件优先(无前缀
+  id),其次命名空间前缀(`<ns>.<id>` / `<ns>::<id>`,多候选时最长前缀优先,与 MyBatis
+  语义一致);**不做跨文件同名 id 的宽松回退**,避免误跳
+- 通道选择:沿用已真机验证的 `psi.referenceContributor language="XML"`(无需 gotoDeclarationHandler),
+  引用可解析时平台自动渲染 Ctrl+悬停原生下划线;目标缺失时 resolve 返回 null(容错)
+
 关键架构决策:`RustDaoIndex.allDaos()` 裸访问器【不做 ensureInitialized】——
 XmlNamespaceIndex 在协调扫描(rebuildAll→rebuildIndex)中调用它,若触发 ensureInitialized
 会同线程重入 `@Synchronized` 的 rebuildAll 造成嵌套全量重建。

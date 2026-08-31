@@ -42,6 +42,13 @@ class XmlNamespaceIndex(private val project: Project) {
         val namespace: String
     )
 
+    /** `<sql id>` 片段定位结果:文件 + 片段 + 所属 namespace */
+    data class SqlFragmentLocation(
+        val file: VirtualFile,
+        val fragment: SqlFragmentInfo,
+        val namespace: String
+    )
+
     @Volatile
     private var initialized = false
 
@@ -263,6 +270,44 @@ class XmlNamespaceIndex(private val project: Project) {
                 ?: info.statements.firstOrNull { it.id == id }
                 ?: continue
             return XmlStatementLocation(file, stmt, info.namespace)
+        }
+        return null
+    }
+
+    /**
+     * 按 `<include refid="...">` 的 refid 值查找 `<sql id>` 片段定义。
+     *
+     * 匹配策略(与 MyBatis 语义一致,找不到返回 null —— 容错,不误跳):
+     * 1. **当前文件优先**:refid 无前缀,查本文件的 `<sql id="refid">`
+     * 2. **命名空间前缀**:refid 形如 `<ns>.<id>` 或 `<ns>::<id>`(跨 mapper 引用),
+     *    命中该 namespace 的 XML 文件后按 id 查找;多个 namespace 可匹配时取最长前缀
+     */
+    fun findSqlFragment(refid: String, currentFile: VirtualFile): SqlFragmentLocation? {
+        ensureInitialized()
+        if (refid.isEmpty()) return null
+
+        // 策略1:当前文件(文件内局部 id)
+        getMapperInfo(currentFile)?.let { info ->
+            info.sqlFragments.firstOrNull { it.id == refid }?.let {
+                return SqlFragmentLocation(currentFile, it, info.namespace)
+            }
+        }
+
+        // 策略2:命名空间前缀(最长前缀优先,避免一个 namespace 是另一个前缀时截胡)
+        val candidates = namespaceToFile.keys
+            .filter { ns -> refid.startsWith("$ns.") || refid.startsWith("$ns::") }
+            .sortedByDescending { it.length }
+        for (ns in candidates) {
+            val file = namespaceToFile[ns] ?: continue
+            val id = if (refid.startsWith("$ns.")) {
+                refid.removePrefix("$ns.")
+            } else {
+                refid.removePrefix("$ns::")
+            }
+            val info = mapperInfoByFile[file] ?: continue
+            info.sqlFragments.firstOrNull { it.id == id }?.let {
+                return SqlFragmentLocation(file, it, ns)
+            }
         }
         return null
     }

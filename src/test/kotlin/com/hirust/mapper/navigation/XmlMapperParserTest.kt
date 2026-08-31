@@ -114,4 +114,80 @@ class XmlMapperParserTest {
         assertEquals("crate::a::e_dao", XmlMapperParser.extractNamespace("""<mapper namespace="crate::a::e_dao"/>"""))
         assertNull(XmlMapperParser.extractNamespace("<mapper/>"))
     }
+
+    // ------------------------------------------------------------------
+    // v1.2.4:sql 可复用片段解析(include refid 跳转目标)
+    // ------------------------------------------------------------------
+
+    private val sqlSample = """
+        <mapper namespace="dao.question">
+            <sql id="list_where">
+                <where>deleted = 0</where>
+            </sql>
+            <sql id="base_columns">id, name, created_at</sql>
+            <select id="list_all" resultType="Question">
+                SELECT <include refid="base_columns"/>
+                FROM questions
+                <include refid="list_where"/>
+            </select>
+            <select id="list_all2" resultType="Question">
+                SELECT * FROM questions
+                <include refid="dao.question.list_where"/>
+            </select>
+        </mapper>
+    """.trimIndent()
+
+    @Test
+    fun `sql fragments parsed with ids`() {
+        val info = XmlMapperParser.parse(sqlSample)!!
+        assertEquals(setOf("list_where", "base_columns"), info.sqlFragments.map { it.id }.toSet())
+        // 语句解析不受影响
+        assertEquals(setOf("list_all", "list_all2"), info.statements.map { it.id }.toSet())
+    }
+
+    @Test
+    fun `sql fragment offsets point into source text`() {
+        val info = XmlMapperParser.parse(sqlSample)!!
+        val frag = info.sqlFragments.first { it.id == "list_where" }
+        assertTrue(sqlSample.startsWith("<sql", frag.tagOffset))
+        // idAttrOffset 指向引号内第一个字符
+        assertEquals('l', sqlSample[frag.idAttrOffset])
+        assertEquals('"', sqlSample[frag.idAttrOffset - 1])
+        assertEquals(
+            "list_where",
+            sqlSample.substring(frag.idAttrOffset, frag.idAttrOffset + "list_where".length)
+        )
+        // 片段偏移量递增
+        val offsets = info.sqlFragments.map { it.tagOffset }
+        assertEquals(offsets.sorted(), offsets)
+    }
+
+    @Test
+    fun `sql fragment without id is skipped`() {
+        val info = XmlMapperParser.parse(
+            """<mapper namespace="dao.x">
+                <sql>no id here</sql>
+                <sql id="ok">has id</sql>
+            </mapper>"""
+        )!!
+        assertEquals(listOf("ok"), info.sqlFragments.map { it.id })
+    }
+
+    @Test
+    fun `sql like tag names are not matched`() {
+        val info = XmlMapperParser.parse(
+            """<mapper namespace="dao.y">
+                <sqlite id="nope">x</sqlite>
+                <sqle id="nope2">y</sqle>
+                <sql id="yes">z</sql>
+            </mapper>"""
+        )!!
+        assertEquals(listOf("yes"), info.sqlFragments.map { it.id })
+    }
+
+    @Test
+    fun `sql fragments default to empty for legacy parsers`() {
+        val info = XmlMapperParser.parse(sample)!!
+        assertTrue(info.sqlFragments.isEmpty())
+    }
 }
