@@ -32,6 +32,14 @@ data class MethodInfo(
     val fnOffset: Int
 )
 
+/** Rust struct 类型定义信息(XML resultType → Rust 跳转目标) */
+data class RustTypeInfo(
+    /** 类型名 */
+    val name: String,
+    /** struct 名称标识符偏移(resultType 跳转落点) */
+    val nameOffset: Int
+)
+
 data class DaoInfo(
     val namespace: String,
     /** namespace 字面量偏移(引号内第一个字符),用于纯文本模式的引用区间 */
@@ -60,6 +68,8 @@ object RustSourceParser {
     private val KIND_PARAM = Regex("""\bkind\s*=\s*"([^"]*)"""")
     private val XML_PARAM = Regex("""\bxml\s*=\s*"([^"]*)"""")
     private val IMPL_KEYWORD = Regex("""\b(impl|struct)\b""")
+    /** struct 定义(含 pub/derive 修饰的普通/元组/单元结构体,名字取标识符) */
+    private val STRUCT_DEF = Regex("""\bstruct\s+([A-Za-z_][A-Za-z0-9_]*)""")
     private val WORD_CHARS: (Char) -> Boolean = { it.isLetterOrDigit() || it == '_' }
 
     /** kind 参数合法值(与 XML 语句标签一致) */
@@ -81,6 +91,15 @@ object RustSourceParser {
     fun isDaoAttr(name: String): Boolean = name == "dao"
 
     fun isMapperMethodAttr(name: String): Boolean = name.startsWith("mapper_")
+
+    /**
+     * 扫描全部 struct 类型定义(供 XML resultType → Rust 跳转)。
+     * 不限 #[dao] 文件 —— resultType 对应的模型类型通常定义在 models 等普通模块中。
+     */
+    fun parseStructTypes(content: String): List<RustTypeInfo> =
+        STRUCT_DEF.findAll(content).map { m ->
+            RustTypeInfo(m.groupValues[1], m.groups[1]!!.range.first)
+        }.toList()
 
     /**
      * 解析源码,返回所有带 namespace 的 DAO 块。

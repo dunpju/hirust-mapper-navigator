@@ -498,6 +498,15 @@ Ctrl+Click → `<sql id="...">` 片段定义(落点 `<sql` 标签)。实现要�
 引用层用 **PsiPolyVariantReference**(`XmlSqlIdToIncludesReference`)——仅一处引用直接跳,
 多处平台弹目标列表,无引用时不跳不划线(容错)。
 
+**v1.2.7 增补**:语句的 `resultType="CountRow"` 值 Ctrl+Click → Rust 中同名
+`struct CountRow` 定义。实现要点:解析层新增 `RustTypeInfo`/`parseStructTypes`
+(`\bstruct\s+NAME` 扫描,不限 #[dao] 文件 —— resultType 对应的模型类型通常在
+models 等普通模块);索引层 `RustDaoIndex` 的文件缓存从 `List<DaoInfo>` 扩展为
+`ParsedFile(daos, types)`(一次读盘两种产出,struct 扫描挂在协调扫描的单次遍历里,
+无额外 IO),新增 `typeIndex` 与 `findType`(支持限定名取末段);XML 侧新增
+`resultType` 属性值引用分支(`XmlResultTypeToRustReference`,落点 struct 名称标识符)。
+已核对目标项目:13 个 resultType 值与 models 中 `pub struct` 一一对应。
+
 另:RustRover 2026.2.1 新插件解析器(`com.intellij.platform.pluginSystem.parser`)在
 install-from-disk 时对 plugin.xml 的 `<icon>` 元素报非致命 SEVERE `Unknown element: icon`
 (日志堆栈含 PluginInstaller.installFromDisk),可能导致首次安装中断——**重试即可装上**;

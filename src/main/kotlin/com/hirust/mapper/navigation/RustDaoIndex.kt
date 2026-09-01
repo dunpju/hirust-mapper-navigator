@@ -23,11 +23,20 @@ class RustDaoIndex(private val project: Project) {
 
     data class MethodLocation(val file: VirtualFile, val dao: DaoInfo, val method: MethodInfo)
 
-    /** 文件级解析缓存:VirtualFile -> (modificationStamp, daos) */
-    private val fileCache = ConcurrentHashMap<VirtualFile, Pair<Long, List<DaoInfo>>>()
+    /** struct 定义定位结果(XML resultType → Rust 跳转) */
+    data class TypeLocation(val file: VirtualFile, val type: RustTypeInfo)
+
+    /** 文件级解析结果:DAO 块 + struct 类型(一次读盘两种产出) */
+    private data class ParsedFile(val daos: List<DaoInfo>, val types: List<RustTypeInfo>)
+
+    /** 文件级解析缓存:VirtualFile -> (modificationStamp, 解析结果) */
+    private val fileCache = ConcurrentHashMap<VirtualFile, Pair<Long, ParsedFile>>()
 
     /** namespace -> DAO 位置 */
     private val namespaceIndex = ConcurrentHashMap<String, DaoLocation>()
+
+    /** 类型名 -> struct 定义位置(resultType 跳转) */
+    private val typeIndex = ConcurrentHashMap<String, TypeLocation>()
 
     @Volatile
     private var initialized = false
@@ -40,27 +49,39 @@ class RustDaoIndex(private val project: Project) {
         if (!initialized) MapperScanCoordinator.getInstance(project).rebuildAll()
     }
 
-    /** 协调扫描开始:清空 namespace 索引(文件级解析缓存按 modStamp 保留) */
+    /** 协调扫描开始:清空 namespace/类型索引(文件级解析缓存按 modStamp 保留) */
     fun beginScan() {
         namespaceIndex.clear()
+        typeIndex.clear()
     }
 
     /**
-     * 协调扫描喂数据:用协调器已读取的内容解析并登记该文件的 DAO,
+     * 协调扫描喂数据:用协调器已读取的内容解析并登记该文件的 DAO 与 struct 类型,
      * 避免每个索引各自读盘造成重复全项目 IO。
      */
     fun acceptFileContent(vf: VirtualFile, content: String) {
         if (!vf.isValid) return
         val stamp = vf.modificationStamp
-        val daos = if (content.contains("#[dao")) RustSourceParser.parse(content) else emptyList()
-        fileCache[vf] = stamp to daos
-        for (dao in daos) {
+        val parsed = parseContent(content)
+        fileCache[vf] = stamp to parsed
+        for (dao in parsed.daos) {
             namespaceIndex[dao.namespace] = DaoLocation(vf, dao)
         }
+        for (t in parsed.types) {
+            typeIndex[t.name] = TypeLocation(vf, t)
+        }
+    }
+
+    /** 一次解析产出 DAO 块与 struct 类型(struct 扫描不限 #[dao] 文件:模型在普通模块) */
+    private fun parseContent(content: String): ParsedFile {
+        val daos = if (content.contains("#[dao")) RustSourceParser.parse(content) else emptyList()
+        val types = if (content.contains("struct")) RustSourceParser.parseStructTypes(content) else emptyList()
+        return ParsedFile(daos, types)
     }
 
     fun rebuildIndex() {
         namespaceIndex.clear()
+        typeIndex.clear()
         val scope = GlobalSearchScope.projectScope(project)
         // 注意:FilenameIndex.getVirtualFilesByName 按"完整文件名"匹配(".rs" 匹配不到 main.rs),
         // 必须用 FileTypeIndex 按文件类型检索(RustRover 中是 RustFileType,无 Rust 插件时是 PlainText)
@@ -78,24 +99,30 @@ class RustDaoIndex(private val project: Project) {
         initialized = true
         val methodCount = namespaceIndex.values.sumOf { it.dao.methods.size }
         log.info("[hirust-mapper-navigator] RustDaoIndex rebuilt: ${namespaceIndex.size} namespaces " +
-                "($methodCount methods) from ${files.size} rs files; " +
+                "($methodCount methods), ${typeIndex.size} structs from ${files.size} rs files; " +
                 namespaceIndex.keys.joinToString(", ", limit = 5))
     }
 
     private fun indexFile(vf: VirtualFile) {
         if (!vf.isValid) return
-        val daos = getParsed(vf) ?: return
-        for (dao in daos) {
+        val parsed = getParsedFile(vf) ?: return
+        for (dao in parsed.daos) {
             namespaceIndex[dao.namespace] = DaoLocation(vf, dao)
+        }
+        for (t in parsed.types) {
+            typeIndex[t.name] = TypeLocation(vf, t)
         }
     }
 
-    /** 解析并缓存单个 .rs 文件;非 .rs 或读取失败返回 null */
-    fun getParsed(vf: VirtualFile): List<DaoInfo>? {
+    /** 解析并缓存单个 .rs 文件的 DAO;非 .rs 或读取失败返回 null */
+    fun getParsed(vf: VirtualFile): List<DaoInfo>? = getParsedFile(vf)?.daos
+
+    /** 解析并缓存单个 .rs 文件的完整结果(DAO + struct);非 .rs 或读取失败返回 null */
+    private fun getParsedFile(vf: VirtualFile): ParsedFile? {
         if (!vf.isValid || vf.extension != "rs") return null
         val stamp = vf.modificationStamp
-        fileCache[vf]?.let { (s, daos) ->
-            if (s == stamp) return daos
+        fileCache[vf]?.let { (s, parsed) ->
+            if (s == stamp) return parsed
         }
         val content = try {
             // 偏移必须与 Document 坐标对齐(\n 归一化),否则 CRLF 文件会逐行漂移
@@ -104,9 +131,20 @@ class RustDaoIndex(private val project: Project) {
             log.warn("[hirust-mapper-navigator] Failed to read ${vf.path}: ${e.message}")
             return null
         }
-        val daos = if (content.contains("#[dao")) RustSourceParser.parse(content) else emptyList()
-        fileCache[vf] = stamp to daos
-        return daos
+        val parsed = parseContent(content)
+        fileCache[vf] = stamp to parsed
+        return parsed
+    }
+
+    /**
+     * 按名称查找 struct 定义(XML resultType → Rust 跳转)。
+     * 支持限定名:取 `::` / `.` 分隔的末段。
+     */
+    fun findType(name: String): TypeLocation? {
+        val simple = name.substringAfterLast("::").substringAfterLast('.')
+        if (simple.isEmpty()) return null
+        ensureInitialized()
+        return typeIndex[simple]?.takeIf { it.file.isValid }
     }
 
     /**
@@ -166,6 +204,7 @@ class RustDaoIndex(private val project: Project) {
     fun refreshFile(vf: VirtualFile) {
         fileCache.remove(vf)
         namespaceIndex.entries.removeIf { it.value.file == vf }
+        typeIndex.entries.removeIf { it.value.file == vf }
         if (vf.isValid && vf.extension == "rs") {
             indexFile(vf)
         }

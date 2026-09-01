@@ -45,6 +45,7 @@ class XmlMapperReferenceProvider : PsiReferenceProvider() {
         val value = attrValue.value ?: return PsiReference.EMPTY_ARRAY
         val interesting = (tag.name == "mapper" && attr.name == "namespace") ||
                 (tag.name in XmlMapperParser.STATEMENT_TAGS && attr.name == "id") ||
+                (tag.name in XmlMapperParser.STATEMENT_TAGS && attr.name == "resultType") ||
                 (tag.name == "include" && attr.name == "refid") ||
                 (tag.name == "sql" && attr.name == "id")
         if (!interesting) return PsiReference.EMPTY_ARRAY
@@ -54,6 +55,8 @@ class XmlMapperReferenceProvider : PsiReferenceProvider() {
                 XmlNamespaceToDaoReference(attrValue)
             tag.name in XmlMapperParser.STATEMENT_TAGS && attr.name == "id" && value.isNotEmpty() ->
                 XmlStatementIdToMethodReference(attrValue)
+            tag.name in XmlMapperParser.STATEMENT_TAGS && attr.name == "resultType" && value.isNotEmpty() ->
+                XmlResultTypeToRustReference(attrValue)
             tag.name == "include" && attr.name == "refid" && value.isNotEmpty() ->
                 XmlIncludeRefidToSqlReference(attrValue)
             tag.name == "sql" && attr.name == "id" && value.isNotEmpty() ->
@@ -96,6 +99,29 @@ class XmlStatementIdToMethodReference(element: XmlAttributeValue) :
         val info = XmlNamespaceIndex.getInstance(project).getMapperInfo(vFile) ?: return null
         val loc = RustDaoIndex.getInstance(project).findMethod(info.namespace, id, tag.name) ?: return null
         return NavigationUtil.findElement(loc.file, project, loc.method.fnOffset)
+    }
+
+    override fun getVariants(): Array<LookupElement> = emptyArray()
+}
+
+/**
+ * `<select|insert|update|delete resultType="Xxx">` 的 resultType 属性值 →
+ * Rust 中同名 `struct Xxx` 定义(v1.2.7)。
+ *
+ * 支持限定名(取 `::` / `.` 分隔的末段);无同名 struct 时 resolve 返回 null
+ * (容错:不跳转、不下划线)。落点:struct 名称标识符。
+ */
+class XmlResultTypeToRustReference(element: XmlAttributeValue) :
+    PsiReferenceBase<XmlAttributeValue>(element) {
+
+    private val log = com.intellij.openapi.diagnostic.Logger.getInstance(XmlResultTypeToRustReference::class.java)
+
+    override fun resolve(): PsiElement? {
+        val raw = element.value ?: return null
+        if (raw.isEmpty()) return null
+        val project = element.project
+        val loc = RustDaoIndex.getInstance(project).findType(raw) ?: return null
+        return NavigationUtil.findElement(loc.file, project, loc.type.nameOffset)
     }
 
     override fun getVariants(): Array<LookupElement> = emptyArray()

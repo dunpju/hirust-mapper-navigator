@@ -336,4 +336,43 @@ class RustSourceParserTest {
         assertEquals('d', dotNamespaceSample[daos[0].nsLiteralOffset])
         assertEquals(3, daos[0].methods.size)
     }
+
+    // ------------------------------------------------------------------
+    // v1.2.7:struct 类型扫描(resultType 跳转目标)
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `struct types scanned with name offsets`() {
+        val content = """
+            use serde::Deserialize;
+
+            #[derive(Debug, Deserialize)]
+            pub struct CountRow {
+                pub cnt: i64,
+            }
+
+            pub struct QuestionStatus(i32);
+
+            struct UnitLike;
+        """.trimIndent()
+        val types = RustSourceParser.parseStructTypes(content)
+        assertEquals(listOf("CountRow", "QuestionStatus", "UnitLike"), types.map { it.name })
+        // nameOffset 指向类型名首字符(前面是 "struct ")
+        for (t in types) {
+            assertEquals(' ', content[t.nameOffset - 1])
+            assertEquals(t.name, content.substring(t.nameOffset, t.nameOffset + t.name.length))
+        }
+    }
+
+    @Test
+    fun `struct like words are not matched`() {
+        val content = "let restructured = 1; // restruct foo\nfn f(x: RestructHolder) {}"
+        assertEquals(emptyList(), RustSourceParser.parseStructTypes(content))
+    }
+
+    @Test
+    fun `no structs returns empty`() {
+        assertEquals(emptyList(), RustSourceParser.parseStructTypes("fn main() {}"))
+        assertEquals(emptyList(), RustSourceParser.parseStructTypes(""))
+    }
 }
