@@ -486,6 +486,18 @@ Ctrl+Click → `<sql id="...">` 片段定义(落点 `<sql` 标签)。实现要�
 2. 索引未命中时**兜底直读当前文件**解析 sql 片段(同文件场景零索引依赖);
    仍未命中输出 info 日志 `include refid unresolved`(便于 idea.log 定位)
 
+> 另:RustRover 2026.2.1 新插件系统解析器(`pluginSystem.parser.impl`)在
+> Install Plugin from Disk 时会对 plugin.xml 的 `<icon>` 元素报
+> `SEVERE Unknown element: icon`(非致命,堆栈在 PluginInstaller.installFromDisk),
+> 重试安装即可成功 —— 排查见 idea.log。
+
+**v1.2.6 增补**:`<sql id="...">` 的 id 值 Ctrl+Click → 引用它的全部 `<include refid>`
+(反向跳转)。解析层新增 `IncludeInfo`/`MapperInfo.includes`;索引层新增
+`findIncludesOf(sqlId, definitionFile)`(匹配语义与 findSqlFragment 对称:同文件无前缀 +
+任意文件带本 namespace 前缀;同文件在前按出现顺序;索引未收录当前文件时直读兜底);
+引用层用 **PsiPolyVariantReference**(`XmlSqlIdToIncludesReference`)——仅一处引用直接跳,
+多处平台弹目标列表,无引用时不跳不划线(容错)。
+
 另:RustRover 2026.2.1 新插件解析器(`com.intellij.platform.pluginSystem.parser`)在
 install-from-disk 时对 plugin.xml 的 `<icon>` 元素报非致命 SEVERE `Unknown element: icon`
 (日志堆栈含 PluginInstaller.installFromDisk),可能导致首次安装中断——**重试即可装上**;
