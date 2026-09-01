@@ -100,7 +100,11 @@ class XmlStatementIdToMethodReference(element: XmlAttributeValue) :
  *
  * 查找策略见 [XmlNamespaceIndex.findSqlFragment]:当前文件优先,
  * 带命名空间前缀(`<ns>.<id>` / `<ns>::<id>`)时跨文件解析;
- * 目标不存在时 resolve 返回 null(容错:不跳转、不下划线、不报错)。
+ * 索引未就绪/未收录时兜底直读当前文件解析(同文件场景零索引依赖);
+ * 目标不存在时 resolve 返回 null(容错:不跳转、不报错)。
+ *
+ * 落点:`<sql id="...">` 的 id 属性值元素(XmlAttributeValue)——
+ * 与 Rust→XML 语句跳转的落点形态一致,平台对其导航可靠。
  */
 class XmlIncludeRefidToSqlReference(element: XmlAttributeValue) :
     PsiReferenceBase<XmlAttributeValue>(element) {
@@ -109,11 +113,44 @@ class XmlIncludeRefidToSqlReference(element: XmlAttributeValue) :
 
     override fun resolve(): PsiElement? {
         val refid = element.value ?: return null
+        if (refid.isEmpty()) return null
         val project = element.project
         val vFile = element.containingFile.virtualFile ?: return null
-        val loc = XmlNamespaceIndex.getInstance(project).findSqlFragment(refid, vFile) ?: return null
-        // 落点:片段定义本身(<sql 标签起始)
-        return NavigationUtil.findElement(loc.file, project, loc.fragment.tagOffset)
+
+        // 通道1:索引查找(同文件优先 + 命名空间前缀跨文件)
+        val loc = XmlNamespaceIndex.getInstance(project).findSqlFragment(refid, vFile)
+        if (loc != null) {
+            return sqlTargetElement(loc.file, project, loc.fragment.idAttrOffset)
+        }
+
+        // 通道2:容错兜底 —— 直接解析当前文件(索引未就绪/未收录时仍可同文件跳转)
+        val frag = readCurrentFragments(vFile)?.firstOrNull { it.id == refid }
+        if (frag != null) {
+            return sqlTargetElement(vFile, project, frag.idAttrOffset)
+        }
+
+        log.info("[hirust-mapper-navigator] include refid unresolved: \"$refid\" in ${vFile.path}")
+        return null
+    }
+
+    /** 读当前文件并解析 sql 片段(ReadAction 包裹;失败返回 null) */
+    private fun readCurrentFragments(vFile: com.intellij.openapi.vfs.VirtualFile): List<SqlFragmentInfo>? =
+        try {
+            com.intellij.openapi.application.ApplicationManager.getApplication()
+                .runReadAction<String?> { NavigationUtil.loadTextDocumentAligned(vFile) }
+                ?.let { XmlMapperParser.parse(it) }?.sqlFragments
+        } catch (_: Exception) {
+            null
+        }
+
+    /** 落点元素:id 属性值(XmlAttributeValue,优先)或其叶子 token */
+    private fun sqlTargetElement(
+        file: com.intellij.openapi.vfs.VirtualFile,
+        project: com.intellij.openapi.project.Project,
+        offset: Int
+    ): PsiElement? {
+        val leaf = NavigationUtil.findElement(file, project, offset) ?: return null
+        return leaf.parent as? XmlAttributeValue ?: leaf
     }
 
     override fun getVariants(): Array<LookupElement> = emptyArray()

@@ -480,6 +480,12 @@ Ctrl+Click → `<sql id="...">` 片段定义(落点 `<sql` 标签)。实现要�
 - 通道选择:沿用已真机验证的 `psi.referenceContributor language="XML"`(无需 gotoDeclarationHandler),
   引用可解析时平台自动渲染 Ctrl+悬停原生下划线;目标缺失时 resolve 返回 null(容错)
 
+**v1.2.5 修复**(refid 下划线/手型出现但 Ctrl+Click 不跳转,真机反馈):两处加固——
+1. resolve 落点从 `<sql` 的 `<` 单字符 token 改为 **id 属性值元素(XmlAttributeValue)**
+   (与 Rust→XML 语句跳转落点同形态,平台导航可靠)
+2. 索引未命中时**兜底直读当前文件**解析 sql 片段(同文件场景零索引依赖);
+   仍未命中输出 info 日志 `include refid unresolved`(便于 idea.log 定位)
+
 关键架构决策:`RustDaoIndex.allDaos()` 裸访问器【不做 ensureInitialized】——
 XmlNamespaceIndex 在协调扫描(rebuildAll→rebuildIndex)中调用它,若触发 ensureInitialized
 会同线程重入 `@Synchronized` 的 rebuildAll 造成嵌套全量重建。
