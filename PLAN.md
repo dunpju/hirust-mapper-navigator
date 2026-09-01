@@ -486,6 +486,17 @@ Ctrl+Click → `<sql id="...">` 片段定义(落点 `<sql` 标签)。实现要�
 2. 索引未命中时**兜底直读当前文件**解析 sql 片段(同文件场景零索引依赖);
    仍未命中输出 info 日志 `include refid unresolved`(便于 idea.log 定位)
 
+另:RustRover 2026.2.1 新插件解析器(`com.intellij.platform.pluginSystem.parser`)在
+install-from-disk 时对 plugin.xml 的 `<icon>` 元素报非致命 SEVERE `Unknown element: icon`
+(日志堆栈含 PluginInstaller.installFromDisk),可能导致首次安装中断——**重试即可装上**;
+若持续失败可去掉 `<icon>` 声明出兼容版。
+
+**v1.2.6 增补**:`<sql id="...">` 的 id 值 Ctrl+Click → 引用它的全部 `<include refid>`
+(反向跳转)。实现:解析层新增 `IncludeInfo`(refid/tagOffset/refidAttrOffset);
+`XmlNamespaceIndex.findIncludesOf`(同文件无前缀 + 任意文件本 namespace 前缀,同文件优先,
+索引缺失时直读当前文件兜底);引用类 `XmlSqlIdToIncludesReference` 实现
+**PsiPolyVariantReference**——单引用直接跳转,多引用平台弹目标列表(与 MybatisX 行为一致)。
+
 关键架构决策:`RustDaoIndex.allDaos()` 裸访问器【不做 ensureInitialized】——
 XmlNamespaceIndex 在协调扫描(rebuildAll→rebuildIndex)中调用它,若触发 ensureInitialized
 会同线程重入 `@Synchronized` 的 rebuildAll 造成嵌套全量重建。

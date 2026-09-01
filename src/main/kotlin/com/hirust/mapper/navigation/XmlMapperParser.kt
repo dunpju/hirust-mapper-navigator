@@ -27,13 +27,25 @@ data class SqlFragmentInfo(
     val idAttrOffset: Int
 )
 
+/** `<include refid="..."/>` 片段引用信息(sql id 反向跳转目标) */
+data class IncludeInfo(
+    /** refid 属性值(可带命名空间前缀) */
+    val refid: String,
+    /** `<include` 起始偏移 */
+    val tagOffset: Int,
+    /** refid 属性值(引号内)的起始偏移(sql→include 跳转落点) */
+    val refidAttrOffset: Int
+)
+
 data class MapperInfo(
     val namespace: String,
     /** `<mapper` 起始偏移(Rust→XML 跳转落点) */
     val mapperTagOffset: Int,
     val statements: List<StatementInfo>,
     /** `<sql id="...">` 可复用片段列表 */
-    val sqlFragments: List<SqlFragmentInfo> = emptyList()
+    val sqlFragments: List<SqlFragmentInfo> = emptyList(),
+    /** `<include refid="..."/>` 片段引用列表 */
+    val includes: List<IncludeInfo> = emptyList()
 )
 
 object XmlMapperParser {
@@ -41,7 +53,9 @@ object XmlMapperParser {
     private val MAPPER_NS = Regex("""<mapper\b[^>]*?\bnamespace\s*=\s*"([^"]+)"""")
     private val STATEMENT = Regex("""<(select|insert|update|delete)\b([^>]*)>""")
     private val SQL_FRAGMENT = Regex("""<sql\b([^>]*)>""")
+    private val INCLUDE = Regex("""<include\b([^>]*)>""")
     private val ID_ATTR = Regex("""\bid\s*=\s*"([^"]*)"""")
+    private val REFID_ATTR = Regex("""\brefid\s*=\s*"([^"]*)"""")
 
     /** 语句标签集合 */
     val STATEMENT_TAGS = setOf("select", "insert", "update", "delete")
@@ -84,7 +98,21 @@ object XmlMapperParser {
             )
         }.toList()
 
-        return MapperInfo(namespace, nsMatch.range.first, statements, sqlFragments)
+        val includes = INCLUDE.findAll(content).mapNotNull { m ->
+            val attrs = m.groupValues[1]
+            val refidMatch = REFID_ATTR.find(attrs) ?: return@mapNotNull null
+            val refid = refidMatch.groupValues[1]
+            if (refid.isEmpty()) return@mapNotNull null
+            val attrsAbsStart = m.groups[1]!!.range.first
+            val refidValueOffset = attrsAbsStart + refidMatch.groups[1]!!.range.first
+            IncludeInfo(
+                refid = refid,
+                tagOffset = m.range.first,
+                refidAttrOffset = refidValueOffset
+            )
+        }.toList()
+
+        return MapperInfo(namespace, nsMatch.range.first, statements, sqlFragments, includes)
     }
 
     /** 快捷方式:仅提取 namespace(无 namespace 返回 null) */

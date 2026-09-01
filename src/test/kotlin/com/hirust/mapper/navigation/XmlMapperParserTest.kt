@@ -190,4 +190,54 @@ class XmlMapperParserTest {
         val info = XmlMapperParser.parse(sample)!!
         assertTrue(info.sqlFragments.isEmpty())
     }
+
+    // ------------------------------------------------------------------
+    // v1.2.6:include 引用解析(sql id 反向跳转目标)
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `includes parsed with refids`() {
+        val info = XmlMapperParser.parse(sqlSample)!!
+        // sqlSample:2 处同文件无前缀 + 1 处命名空间前缀引用
+        assertEquals(
+            listOf("base_columns", "list_where", "dao.question.list_where"),
+            info.includes.map { it.refid }
+        )
+    }
+
+    @Test
+    fun `include offsets point into source text`() {
+        val info = XmlMapperParser.parse(sqlSample)!!
+        val inc = info.includes.first { it.refid == "list_where" }
+        assertTrue(sqlSample.startsWith("<include", inc.tagOffset))
+        // refidAttrOffset 指向引号内第一个字符
+        assertEquals('l', sqlSample[inc.refidAttrOffset])
+        assertEquals('"', sqlSample[inc.refidAttrOffset - 1])
+        assertEquals(
+            "list_where",
+            sqlSample.substring(inc.refidAttrOffset, inc.refidAttrOffset + "list_where".length)
+        )
+    }
+
+    @Test
+    fun `include without refid is skipped`() {
+        val info = XmlMapperParser.parse(
+            """<mapper namespace="dao.z">
+                <include/>
+                <include refid="ok"/>
+            </mapper>"""
+        )!!
+        assertEquals(listOf("ok"), info.includes.map { it.refid })
+    }
+
+    @Test
+    fun `include like tag names are not matched`() {
+        val info = XmlMapperParser.parse(
+            """<mapper namespace="dao.w">
+                <included refid="nope"/>
+                <include refid="yes"/>
+            </mapper>"""
+        )!!
+        assertEquals(listOf("yes"), info.includes.map { it.refid })
+    }
 }

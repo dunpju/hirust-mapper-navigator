@@ -4,8 +4,11 @@ import com.intellij.codeInsight.lookup.LookupElement
 import com.intellij.codeInsight.lookup.LookupElementBuilder
 import com.intellij.patterns.PlatformPatterns
 import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiElementResolveResult
+import com.intellij.psi.PsiPolyVariantReference
 import com.intellij.psi.PsiReference
 import com.intellij.psi.PsiReferenceBase
+import com.intellij.psi.ResolveResult
 import com.intellij.psi.PsiReferenceContributor
 import com.intellij.psi.PsiReferenceProvider
 import com.intellij.psi.PsiReferenceRegistrar
@@ -42,7 +45,8 @@ class XmlMapperReferenceProvider : PsiReferenceProvider() {
         val value = attrValue.value ?: return PsiReference.EMPTY_ARRAY
         val interesting = (tag.name == "mapper" && attr.name == "namespace") ||
                 (tag.name in XmlMapperParser.STATEMENT_TAGS && attr.name == "id") ||
-                (tag.name == "include" && attr.name == "refid")
+                (tag.name == "include" && attr.name == "refid") ||
+                (tag.name == "sql" && attr.name == "id")
         if (!interesting) return PsiReference.EMPTY_ARRAY
 
         val ref = when {
@@ -52,6 +56,8 @@ class XmlMapperReferenceProvider : PsiReferenceProvider() {
                 XmlStatementIdToMethodReference(attrValue)
             tag.name == "include" && attr.name == "refid" && value.isNotEmpty() ->
                 XmlIncludeRefidToSqlReference(attrValue)
+            tag.name == "sql" && attr.name == "id" && value.isNotEmpty() ->
+                XmlSqlIdToIncludesReference(attrValue)
             else -> null
         } ?: return PsiReference.EMPTY_ARRAY
         return arrayOf(ref)
@@ -152,6 +158,42 @@ class XmlIncludeRefidToSqlReference(element: XmlAttributeValue) :
         val leaf = NavigationUtil.findElement(file, project, offset) ?: return null
         return leaf.parent as? XmlAttributeValue ?: leaf
     }
+
+    override fun getVariants(): Array<LookupElement> = emptyArray()
+}
+
+/**
+ * `<sql id="...">` 的 id 属性值 → 引用该片段的全部 `<include refid>` 位置(v1.2.6 反向跳转)。
+ *
+ * 多目标引用([PsiPolyVariantReference]):仅一处引用时 Ctrl+Click 直接跳转,
+ * 多处时平台弹出目标列表供选择(如 QuestionMapper 中 list_where 被 2 处 include 引用)。
+ *
+ * 匹配语义与 [XmlIncludeRefidToSqlReference] 对称:同文件无前缀 refid、
+ * 任意文件带本 namespace 前缀的 refid;无任何引用时 multiResolve 返回空数组
+ * (容错:不跳转、不下划线)。
+ *
+ * 落点:include 的 refid 属性值元素(XmlAttributeValue,与正向跳转落点同形态)。
+ */
+class XmlSqlIdToIncludesReference(element: XmlAttributeValue) :
+    PsiReferenceBase<XmlAttributeValue>(element), PsiPolyVariantReference {
+
+    private val log = com.intellij.openapi.diagnostic.Logger.getInstance(XmlSqlIdToIncludesReference::class.java)
+
+    override fun multiResolve(incompleteCode: Boolean): Array<ResolveResult> {
+        val id = element.value ?: return ResolveResult.EMPTY_ARRAY
+        if (id.isEmpty()) return ResolveResult.EMPTY_ARRAY
+        val project = element.project
+        val vFile = element.containingFile.virtualFile ?: return ResolveResult.EMPTY_ARRAY
+        val locs = XmlNamespaceIndex.getInstance(project).findIncludesOf(id, vFile)
+        return locs.mapNotNull { loc ->
+            val leaf = NavigationUtil.findElement(loc.file, project, loc.include.refidAttrOffset)
+                ?: return@mapNotNull null
+            val target = leaf.parent as? XmlAttributeValue ?: leaf
+            PsiElementResolveResult(target)
+        }.toTypedArray()
+    }
+
+    override fun resolve(): PsiElement? = multiResolve(false).firstOrNull()?.element
 
     override fun getVariants(): Array<LookupElement> = emptyArray()
 }

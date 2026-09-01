@@ -49,6 +49,13 @@ class XmlNamespaceIndex(private val project: Project) {
         val namespace: String
     )
 
+    /** `<include refid>` 引用定位结果:文件 + 引用 + 所属 namespace */
+    data class IncludeLocation(
+        val file: VirtualFile,
+        val include: IncludeInfo,
+        val namespace: String
+    )
+
     @Volatile
     private var initialized = false
 
@@ -310,6 +317,57 @@ class XmlNamespaceIndex(private val project: Project) {
             }
         }
         return null
+    }
+
+    /**
+     * 反向查找:引用了指定 `<sql id>` 片段的全部 `<include refid>` 位置
+     * (sql id 反向跳转,多处引用时由平台弹出目标列表)。
+     *
+     * 匹配语义与 [findSqlFragment] 对称:
+     * - 同文件的无前缀 refid(`refid == id`)
+     * - 任意文件带本片段 namespace 前缀的 refid(`ns.id` / `ns::id`)
+     *
+     * 排序:同文件在前,各文件内按出现顺序。
+     * 索引未收录当前文件时兜底直读解析(同文件场景零索引依赖)。
+     */
+    fun findIncludesOf(sqlId: String, definitionFile: VirtualFile): List<IncludeLocation> {
+        ensureInitialized()
+        if (sqlId.isEmpty()) return emptyList()
+        val defNs = mapperInfoByFile[definitionFile]?.namespace
+
+        val result = mutableListOf<IncludeLocation>()
+        fun IncludeInfo.matches(file: VirtualFile): Boolean =
+            (refid == sqlId && file == definitionFile) ||
+                    (defNs != null && (refid == "$defNs.$sqlId" || refid == "$defNs::$sqlId"))
+
+        for (file in indexedFiles) {
+            val info = mapperInfoByFile[file] ?: continue
+            info.includes.filter { it.matches(file) }.forEach {
+                result += IncludeLocation(file, it, info.namespace)
+            }
+        }
+
+        // 兜底:索引未就绪/未收录当前文件时,直接解析当前文件(同文件 + 本 namespace 前缀)
+        if (result.isEmpty() && mapperInfoByFile[definitionFile] == null) {
+            val info = try {
+                ApplicationManager.getApplication().runReadAction<String?> {
+                    NavigationUtil.loadTextDocumentAligned(definitionFile)
+                }?.let { XmlMapperParser.parse(it) }
+            } catch (_: Exception) {
+                null
+            }
+            val ns = info?.namespace
+            info?.includes?.filter {
+                it.refid == sqlId ||
+                        (ns != null && (it.refid == "$ns.$sqlId" || it.refid == "$ns::$sqlId"))
+            }?.forEach {
+                result += IncludeLocation(definitionFile, it, ns ?: "")
+            }
+        }
+
+        return result.sortedWith(
+            compareBy({ it.file != definitionFile }, { it.include.tagOffset })
+        )
     }
 
     fun extractStem(namespace: String): String? {

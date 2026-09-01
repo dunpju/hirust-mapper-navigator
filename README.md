@@ -13,6 +13,7 @@ RustRover 插件，为 [hirust-mapper](https://github.com/hirust/hirust-mapper) 
 **XML → XML**（v1.2.4，Ctrl+Click 属性值）：
 - `<include refid="list_where"/>` 的 refid 值 → 同文件的 `<sql id="list_where">` 定义
 - 带命名空间前缀的 `refid="dao.question.list_where"` → 对应 namespace 的 XML 文件中的 `<sql>` 定义
+- **反向**（v1.2.6）：`<sql id="list_where">` 的 id 值 → 引用它的全部 `<include refid>`；仅一处直接跳转，多处弹出目标列表
 
 **Rust → XML**（Ctrl+Click 字符串，或点击行号旁图标，RustRover 中生效）：
 - `#[dao(namespace = "...")]` 的 namespace 字符串 / impl 类型名 → 跳到 XML 的 `<mapper>` 标签
@@ -107,13 +108,13 @@ git push origin v1.0.0
 gradlew.bat buildPlugin
 ```
 
-构建产物位于 `build/distributions/hirust-mapper-navigator-1.2.5.zip`。
+构建产物位于 `build/distributions/hirust-mapper-navigator-1.2.6.zip`。
 
 ### 在 RustRover 中安装
 
 1. 打开 RustRover → **Settings** → **Plugins**
 2. 点击 **⚙️** → **Install Plugin from Disk...**
-3. 选择 `build/distributions/hirust-mapper-navigator-1.2.5.zip`
+3. 选择 `build/distributions/hirust-mapper-navigator-1.2.6.zip`
 4. 重启 RustRover
 
 ### 调试模式运行
@@ -174,6 +175,7 @@ hirust-mapper-navigator/
 - [x] XML → Rust 双向跳转（Ctrl+Click / 行标记：namespace → DAO、语句 id → 方法）
 - [x] Rust → XML 双向跳转（Ctrl+Click / 行标记：namespace 字符串 → `<mapper>`、id 字符串 → 语句）
 - [x] XML SQL 片段 `<include refid="...">` → `<sql id="...">` 跳转（v1.2.4，支持命名空间前缀跨文件）
+- [x] `<sql id>` → `<include refid>` 反向跳转（v1.2.6，多引用弹列表）
 - [ ] namespace / 语句 id 自动补全
 - [ ] JPA 提示式语句生成（方法名 → XML 语句骨架）
 - [ ] 数据库表 → Rust 结构体 + DAO + XML 代码生成
