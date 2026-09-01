@@ -367,12 +367,12 @@ class RustSourceParserTest {
     @Test
     fun `struct like words are not matched`() {
         val content = "let restructured = 1; // restruct foo\nfn f(x: RestructHolder) {}"
-        assertEquals(emptyList(), RustSourceParser.parseStructTypes(content))
+        assertTrue(RustSourceParser.parseStructTypes(content).isEmpty())
     }
 
     @Test
     fun `no structs returns empty`() {
-        assertEquals(emptyList(), RustSourceParser.parseStructTypes("fn main() {}"))
-        assertEquals(emptyList(), RustSourceParser.parseStructTypes(""))
+        assertTrue(RustSourceParser.parseStructTypes("fn main() {}").isEmpty())
+        assertTrue(RustSourceParser.parseStructTypes("").isEmpty())
     }
 }
