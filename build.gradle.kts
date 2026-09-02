@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "com.hirust"
-version = "1.2.13"
+version = "1.2.18"
 
 repositories {
     mavenCentral()
