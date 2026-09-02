@@ -157,13 +157,15 @@ object RustStructUsageSearcher {
                 app.invokeLater({
                     if (project.isDisposed) return@invokeLater
                     val presentation = UsageViewPresentation().apply {
-                        tabName = "Struct Usages: $structName"
-                        // setUsagesString 无对应 getter,Kotlin 属性语法不可用,需显式调用
+                        // 该类的 setter 为 fluent 风格(返回 this),Kotlin 属性赋值语法
+                        // 不会真正落到 setter 上(曾导致 tabName=null → addContent 断言失败),
+                        // 全部使用显式 setter 调用
+                        setTabName("Struct Usages: $structName")
                         setUsagesString("usages of struct $structName")
-                        codeUsagesString = "struct $structName"
-                        isCodeUsages = true
-                        isOpenInNewTab = false
-                        scopeText = "Project"
+                        setCodeUsagesString("struct $structName")
+                        setCodeUsages(true)
+                        setOpenInNewTab(false)
+                        setScopeText("Project")
                     }
                     val targets = arrayOf<UsageTarget>(PsiElement2UsageTargetAdapter(definitionPsi))
                     UsageViewManager.getInstance(project).showUsages(targets, usages.toTypedArray(), presentation)
