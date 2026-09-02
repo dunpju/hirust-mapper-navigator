@@ -80,7 +80,24 @@ class XmlNamespaceToDaoReference(element: XmlAttributeValue) :
         return NavigationUtil.findElement(loc.file, project, loc.dao.attrOffset)
     }
 
-    override fun getVariants(): Array<LookupElement> = emptyArray()
+    /**
+     * namespace 自动补全:列出项目全部已索引 DAO 的 namespace。
+     * 候选项显示 DAO 类型名(typeText)与所在文件(灰色尾注)。
+     */
+    override fun getVariants(): Array<LookupElement> {
+        val project = element.project
+        // allDaos() 不做 ensureInitialized,先经 XML 索引入口触发协调扫描确保 DAO 索引就绪
+        XmlNamespaceIndex.getInstance(project).ensureInitialized()
+        return RustDaoIndex.getInstance(project).allDaos()
+            .distinctBy { it.dao.namespace }
+            .map { loc ->
+                LookupElementBuilder.create(loc.dao.namespace)
+                    .withIcon(Icons.TO_RUST)
+                    .withTypeText(loc.dao.implName.ifEmpty { "dao" })
+                    .withTailText("  (${loc.file.name})", true)
+            }
+            .toTypedArray()
+    }
 }
 
 /** 语句 id 属性值 → Rust 方法 */
@@ -101,7 +118,34 @@ class XmlStatementIdToMethodReference(element: XmlAttributeValue) :
         return NavigationUtil.findElement(loc.file, project, loc.method.fnOffset)
     }
 
-    override fun getVariants(): Array<LookupElement> = emptyArray()
+    /**
+     * 语句 id 自动补全:列出当前 mapper 的 namespace 对应 DAO 的全部方法 id。
+     * - 仅建议与标签类型匹配的方法(select 标签 ↔ mapper_query/select 等宏)
+     * - 排除本文件已被其他语句/片段占用的 id(当前正在编辑的 id 除外)
+     * 候选项显示对应 fn 名(typeText)与语句标签(灰色尾注)。
+     */
+    override fun getVariants(): Array<LookupElement> {
+        val project = element.project
+        val vFile = element.containingFile.virtualFile ?: return emptyArray()
+        val attr = element.parent as? XmlAttribute ?: return emptyArray()
+        val tag = attr.parent as? XmlTag ?: return emptyArray()
+
+        val info = XmlNamespaceIndex.getInstance(project).getMapperInfo(vFile) ?: return emptyArray()
+        val daoLoc = RustDaoIndex.getInstance(project).findDaoByNamespace(info.namespace) ?: return emptyArray()
+
+        val currentId = element.value ?: ""
+        val usedIds = (info.statements.map { it.id } + info.sqlFragments.map { it.id })
+            .toSet() - currentId
+        return daoLoc.dao.methods
+            .filter { it.stmtTag == tag.name && it.id !in usedIds }
+            .map { m ->
+                LookupElementBuilder.create(m.id)
+                    .withIcon(Icons.TO_RUST)
+                    .withTypeText("fn ${m.fnName}")
+                    .withTailText("  <${m.stmtTag}>", true)
+            }
+            .toTypedArray()
+    }
 }
 
 /**

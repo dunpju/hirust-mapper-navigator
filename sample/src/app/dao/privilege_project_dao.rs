@@ -33,6 +33,11 @@ impl PrivilegeProjectDao {
     pub async fn remove(&self, id: u64) -> u64 {
         todo!()
     }
+
+    #[mapper_delete]
+    pub async fn remove1(&self, id: u64) -> u64 {
+        todo!()
+    }
 }
 
 pub struct PrivilegeProject {
