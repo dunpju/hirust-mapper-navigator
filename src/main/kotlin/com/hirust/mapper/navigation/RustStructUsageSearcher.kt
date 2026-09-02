@@ -1,35 +1,30 @@
 package com.hirust.mapper.navigation
 
-import com.intellij.find.findUsages.PsiElement2UsageTargetAdapter
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.fileTypes.FileTypeManager
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.vfs.VirtualFile
-import com.intellij.psi.PsiElement
-import com.intellij.psi.PsiManager
 import com.intellij.psi.search.FileTypeIndex
 import com.intellij.psi.search.GlobalSearchScope
-import com.intellij.usageView.UsageInfo
-import com.intellij.usages.Usage
-import com.intellij.usages.UsageInfo2UsageAdapter
-import com.intellij.usages.UsageTarget
-import com.intellij.usages.UsageViewManager
-import com.intellij.usages.UsageViewPresentation
+import com.intellij.ui.ColoredListCellRenderer
+import com.intellij.ui.SimpleTextAttributes
 
 /**
  * Rust struct 的 Find Usages(Ctrl+Click 聚合查找)。
  *
- * 触发:在 .rs 文件中 Ctrl+Click 某个 struct 名称 → 平台原生 Usages 窗口
- * 聚合展示全项目使用位置,双击任意行跳转到对应文件/行。
+ * 触发:在 .rs 文件中 Ctrl+Click 某个 struct 名称 → 结果弹窗聚合展示
+ * 全项目使用位置(文件:行号 + 代码片段),点击/回车/双击跳转到对应位置。
  *
  * 覆盖五类场景(均为标识符全词匹配,天然覆盖):
  * 1) Rust 代码直接引用;2) use 导入语句;3) 泛型参数(Vec&lt;T&gt;);
  * 4) 方法返回值类型;5) XML 映射文件属性引用(resultType/resultMap/ofType/parameterType/type)。
  *
- * 实现说明:平台 Find Usages 管线依赖语言引用机制(RUST 语言扩展点在本插件
- * 环境不生效,见 PLAN.md 踩坑记录 #6),故采用文本搜索 + UsageViewManager.showUsages
- * 直接装配原生 Usages 窗口 —— 窗口的文件/行号展示与双击导航均为平台内置行为。
+ * 实现说明:原生 UsageViewManager 的 showUsages / searchAndShowUsages 在
+ * 本插件环境(按 IC 2024.2 编译、RustRover 2026.2 运行)均不可用 —— 前者经
+ * BackendUsageViewManager 包装后 tabName 丢失断言失败,后者方法签名跨版本
+ * 变化触发 NoSuchMethodError。故改用 JBPopupFactory 结果弹窗(十年级稳定 API)。
  */
 object RustStructUsageSearcher {
 
@@ -38,8 +33,14 @@ object RustStructUsageSearcher {
     /** XML 中引用类型的属性名(值可为限定名,取末段比对) */
     private val XML_TYPE_ATTR = Regex("""\b(resultType|resultMap|ofType|parameterType|type)\s*=\s*"([^"]*)"""")
 
-    /** 一次命中的位置:文件 + 偏移(Document 坐标)+ 行号(0 基)+ 是否 XML */
-    data class Hit(val file: VirtualFile, val offset: Int, val line: Int, val inXml: Boolean)
+    /** 一次命中的位置:文件 + 偏移(Document 坐标)+ 行号(0 基)+ 该行代码片段 + 是否 XML */
+    data class Hit(
+        val file: VirtualFile,
+        val offset: Int,
+        val line: Int,
+        val snippet: String,
+        val inXml: Boolean
+    )
 
     // ------------------------------------------------------------------
     // 纯文本匹配(可单元测试)
@@ -101,13 +102,12 @@ object RustStructUsageSearcher {
 
         // Rust 源码
         val rsFiles = runReadActionFiles(project, "rs")
-        val psiManager = PsiManager.getInstance(project)
         for (vf in rsFiles) {
             if (!vf.isValid) continue
             val content = app.runReadAction<String?> { NavigationUtil.loadTextDocumentAligned(vf) } ?: continue
             if (!content.contains(name)) continue
             for ((offset, line) in rustUsageOffsets(content, name)) {
-                hits.add(Hit(vf, offset, line, inXml = false))
+                hits.add(Hit(vf, offset, line, lineSnippet(content, offset), inXml = false))
             }
         }
 
@@ -119,10 +119,19 @@ object RustStructUsageSearcher {
             val content = app.runReadAction<String?> { NavigationUtil.loadTextDocumentAligned(vf) } ?: continue
             if (!content.contains(name)) continue
             for ((offset, line) in xmlUsageOffsets(content, name)) {
-                hits.add(Hit(vf, offset, line, inXml = true))
+                hits.add(Hit(vf, offset, line, lineSnippet(content, offset), inXml = true))
             }
         }
         return hits
+    }
+
+    /** 取 offset 所在行的代码片段(截断到 100 字符) */
+    private fun lineSnippet(content: String, offset: Int): String {
+        val start = content.lastIndexOf('\n', offset.coerceAtMost(content.length - 1)) + 1
+        var end = content.indexOf('\n', offset)
+        if (end < 0) end = content.length
+        val raw = content.substring(start, end).trim()
+        return if (raw.length > 100) raw.substring(0, 100) + "…" else raw
     }
 
     private fun runReadActionFiles(project: Project, ext: String): List<VirtualFile> {
@@ -135,41 +144,52 @@ object RustStructUsageSearcher {
     }
 
     // ------------------------------------------------------------------
-    // 展示:后台搜索 → EDT 打开原生 Usages 窗口
+    // 展示:后台搜索 → EDT 结果弹窗(JBPopupFactory,跨版本稳定 API)
     // ------------------------------------------------------------------
 
     /**
-     * 后台执行全项目搜索并在 EDT 打开 Find Usages 窗口。
-     * @param definitionPsi struct 定义处元素(作为 UsageTarget 展示在窗口头部)
+     * 后台执行全项目搜索,在 EDT 弹出结果列表(文件:行号 + 代码片段),
+     * 点击/回车/双击任意一行跳转到对应文件的对应偏移。
      */
-    fun showAsync(project: Project, structName: String, definitionPsi: PsiElement) {
+    fun showAsync(project: Project, structName: String) {
         val app = ApplicationManager.getApplication()
         app.executeOnPooledThread {
             try {
-                val usages = app.runReadAction<List<Usage>> {
-                    search(project, structName).mapNotNull { hit ->
-                        val psiFile = PsiManager.getInstance(project).findFile(hit.file) ?: return@mapNotNull null
-                        val element = psiFile.findElementAt(hit.offset.coerceIn(0, psiFile.textLength - 1))
-                            ?: return@mapNotNull null
-                        UsageInfo2UsageAdapter(UsageInfo(element)) as Usage
-                    }
-                }
+                val hits = app.runReadAction<List<Hit>> { search(project, structName) }
                 app.invokeLater({
                     if (project.isDisposed) return@invokeLater
-                    val presentation = UsageViewPresentation().apply {
-                        // 该类的 setter 为 fluent 风格(返回 this),Kotlin 属性赋值语法
-                        // 不会真正落到 setter 上(曾导致 tabName=null → addContent 断言失败),
-                        // 全部使用显式 setter 调用
-                        setTabName("Struct Usages: $structName")
-                        setUsagesString("usages of struct $structName")
-                        setCodeUsagesString("struct $structName")
-                        setCodeUsages(true)
-                        setOpenInNewTab(false)
-                        setScopeText("Project")
+                    if (hits.isEmpty()) {
+                        com.intellij.openapi.ui.Messages.showInfoMessage(
+                            "struct $structName 在项目中没有找到使用处",
+                            "Struct Usages"
+                        )
+                        return@invokeLater
                     }
-                    val targets = arrayOf<UsageTarget>(PsiElement2UsageTargetAdapter(definitionPsi))
-                    UsageViewManager.getInstance(project).showUsages(targets, usages.toTypedArray(), presentation)
-                    log.info("[hirust-mapper-navigator] Struct usages shown: ${structName} x${usages.size}")
+                    val popup = JBPopupFactory.getInstance()
+                        .createPopupChooserBuilder(hits)
+                        .setTitle("Struct Usages: $structName  (${hits.size} 处)")
+                        .setRenderer(object : ColoredListCellRenderer<Hit>() {
+                            override fun customizeCellRenderer(
+                                list: javax.swing.JList<out Hit>,
+                                value: Hit,
+                                index: Int,
+                                selected: Boolean,
+                                hasFocus: Boolean
+                            ) {
+                                append("${value.file.name}:${value.line + 1}",
+                                    SimpleTextAttributes(SimpleTextAttributes.STYLE_BOLD, null))
+                                append("  ${value.snippet}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
+                                toolTipText = value.file.path
+                            }
+                        })
+                        .setItemChosenCallback { hit ->
+                            com.intellij.openapi.fileEditor.OpenFileDescriptor(
+                                project, hit.file, hit.offset
+                            ).navigate(true)
+                        }
+                        .createPopup()
+                    popup.showInFocusCenter()
+                    log.info("[hirust-mapper-navigator] StructUsages popup shown: $structName x${hits.size}")
                 }, project.disposed)
             } catch (e: Exception) {
                 log.warn("[hirust-mapper-navigator] Struct usage search failed: ${e.message}")

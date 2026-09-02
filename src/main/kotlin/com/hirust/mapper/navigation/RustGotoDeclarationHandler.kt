@@ -138,12 +138,12 @@ class RustGotoDeclarationHandler : GotoDeclarationHandler {
                 }
             }
         }
-        // struct 类型名 → Find Usages 窗口(聚合 Rust 引用/use 导入/泛型/返回值/XML resultType)
+        // struct 类型名 → Find Usages 弹窗(聚合 Rust 引用/use 导入/泛型/返回值/XML resultType)
         val typeLoc = RustDaoIndex.getInstance(project).findType(word.text) ?: return null
         val defTarget = NavigationUtil.findElement(typeLoc.file, project, typeLoc.type.nameOffset)
             ?: return null
         if (isClickContext()) {
-            RustStructUsageSearcher.showAsync(project, word.text, defTarget)
+            RustStructUsageSearcher.showAsync(project, word.text)
         }
         return arrayOf(defTarget)
     }
