@@ -158,7 +158,8 @@ object RustStructUsageSearcher {
                     if (project.isDisposed) return@invokeLater
                     val presentation = UsageViewPresentation().apply {
                         tabName = "Struct Usages: $structName"
-                        usagesString = "usages of struct $structName"
+                        // setUsagesString 无对应 getter,Kotlin 属性语法不可用,需显式调用
+                        setUsagesString("usages of struct $structName")
                         codeUsagesString = "struct $structName"
                         isCodeUsages = true
                         isOpenInNewTab = false

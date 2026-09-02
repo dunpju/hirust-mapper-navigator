@@ -50,9 +50,10 @@ class RustStructUsageSearcherTest {
             assertEquals("hit at line $line", "CountRow", rustSample.substring(offset, offset + "CountRow".length))
             assertTrue("line number matches offset", textLines[line].contains("CountRow"))
         }
-        // use 导入 ×2、泛型参数 ×3(Vec<CountRow> 两处 + 结构体字段一处)、
-        // 返回值类型 ×2、局部引用 ×2 —— 至少 8 处(字段与 let 皆有)
-        assertTrue("expect >= 8 usages, got ${hits.size}", hits.size >= 8)
+        // use 导入 ×2、结构体字段泛型 ×1、返回值泛型 ×1、返回值类型 ×1、
+        // 局部泛型 ×1、局部构造 ×1 —— 共 7 处
+        assertEquals("expect 7 usages, got ${hits.size} at lines ${hits.map { it.second }}",
+                7, hits.size)
     }
 
     @Test
