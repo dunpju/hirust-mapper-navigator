@@ -168,12 +168,7 @@ class GenerateXmlStatementAction : AnAction() {
         val stmtIdx = Regex("""<$tag id="$id"""").find(newText)?.range?.first ?: 0
         val idIdx = newText.indexOf("\"$id\"", stmtIdx) + 1
         OpenFileDescriptor(project, xmlFile, idIdx).navigate(true)
-        // 气泡内容按 HTML 渲染,尖括号需转义(否则 <select> 会被渲染成下拉框)
-        notify(
-            project,
-            "已生成语句 &lt;$tag id=\"$id\"&gt;",
-            NotificationType.INFORMATION
-        )
+        notify(project, "已生成语句:$id", NotificationType.INFORMATION)
     }
 
     private fun notify(project: Project, message: String, type: NotificationType) {

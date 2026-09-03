@@ -83,6 +83,21 @@ let mapper_config = HirustMapperConfig::new()
 > 实现说明:补全框架的三层通道(CompletionContributor 咨询 / autopopup 会话 / 引用 getVariants)在本插件环境均不可用,
 > 最终采用 `LookupManager.showLookup`(稳定 API)+ 延迟错峰显示 + 插入后重解析实现,详见 [PLAN.md](PLAN.md)。
 
+### 6. JPA 提示式语句生成(v1.4.x)
+
+在 `.rs` 中 **Alt+Shift+Click** `#[mapper_*]` 方法(宏行至签名闭括号任意位置)→ 生成 XML 语句骨架并跳转(语句已存在则提示并直接跳转):
+
+| 宏 | 生成骨架 | 智能来源 |
+|----|---------|---------|
+| `mapper_query` | `SELECT * FROM 表 WHERE ...` | fn 名含 `count` → `COUNT(*)`;WHERE = 参数 AND 串联 |
+| `mapper_insert` | `INSERT INTO 表 (列) VALUES (#{列})` | 参数类型为 struct(如 `p: &PrivilegeProject`)→ 自动展开字段为列 |
+| `mapper_update` | `UPDATE 表 SET 非id字段 WHERE id=#{id}` | 同上 |
+| `mapper_delete` | `DELETE FROM 表 WHERE ...` | 参数串联 |
+
+- 表名取现有语句 `FROM/INTO` 最高频者,缺省从 namespace 末段推导
+- 生成后**无需保存**即可 Ctrl+Click 双向跳转(未保存文档兜底)
+- 亦可通过 Generate 菜单 / 右键菜单触发
+
 ### 环境兼容性
 
 | 环境 | Rust→XML Ctrl+Click | Rust 悬停下划线/图标 | XML→Rust Ctrl+Click | XML→Rust 图标 |
@@ -120,13 +135,13 @@ git push origin v1.0.0
 gradlew.bat buildPlugin
 ```
 
-构建产物位于 `build/distributions/hirust-mapper-navigator-1.3.0.zip`。
+构建产物位于 `build/distributions/hirust-mapper-navigator-1.4.4.zip`。
 
 ### 在 RustRover 中安装
 
 1. 打开 RustRover → **Settings** → **Plugins**
 2. 点击 **⚙️** → **Install Plugin from Disk...**
-3. 选择 `build/distributions/hirust-mapper-navigator-1.3.0.zip`
+3. 选择 `build/distributions/hirust-mapper-navigator-1.4.4.zip`
 4. 重启 RustRover
 
 ### 调试模式运行
@@ -190,5 +205,5 @@ hirust-mapper-navigator/
 - [x] `<sql id>` → `<include refid>` 反向跳转（v1.2.6，多引用弹列表）
 - [x] `resultType` → Rust struct 定义跳转（v1.2.7）
 - [x] namespace / 语句 id 自动补全（v1.3.0，输入即弹出、标签类型过滤、排除已占用 id）
-- [ ] JPA 提示式语句生成（方法名 → XML 语句骨架）
+- [x] JPA 提示式语句生成（v1.4.x，Alt+Shift+Click 触发、struct 字段展开、表名推导）
 - [ ] 数据库表 → Rust 结构体 + DAO + XML 代码生成

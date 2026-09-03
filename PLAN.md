@@ -653,3 +653,35 @@ TypedHandlerDelegate.charTyped(第4参已从 FileType 改为 PsiFile —— 2024
 - **图标未保存联动**:RustGutterManager 语句查找失败时直读 XML 当前文档(未保存内容),补全插入后无需保存即出图标
 - **移除图章跳过优化**:图标依赖的 XML 侧状态不在 .rs 文档图章中,跳过导致切换标签后不刷新
 - **协调扫描风暴**:`rebuildAll` 加 `ready` 短路(曾每秒 ~7 次全项目扫描;强制重建走 `forceRebuild`)
+
+---
+
+## 十六、JPA 提示式语句生成(v1.4.x)
+
+需求:`#[mapper_*]` 方法 → XML 语句骨架(参照 MybatisX 的 JPA 提示)。
+
+### 16.1 触发通道演进
+
+| 版本 | 通道 | 结果 |
+|------|------|------|
+| v1.4.0 | AnAction + **Alt+Shift+G** 快捷键(GenerateGroup/右键菜单) | 可用,但用户要求改鼠标交互 |
+| v1.4.1+ | **Alt+Shift+Click**(EditorMouseListener 挂 RustGutterManager 的 .rs 编辑器挂载点,与 Ctrl 修饰互不冲突) | ✅ 最终形态;菜单入口保留 |
+
+> 意图(IntentionAction)/检查(Inspection)均为语言限定扩展点,在 RUST 语言上不生效(同踩坑记录 #6),故走动作/鼠标通道。
+
+### 16.2 生成规则(解析器增强 + 纯函数骨架)
+
+- **解析器扩展**(均有单测):`MethodInfo.params`(fn 参数 name/type,支持 `&T`/`Option<T>`/`Vec<T>`,剔除 self)、
+  `RustTypeInfo.fields`(struct 字段,支持 `pub(crate)`/属性行)、`sigEndOffset`(签名闭括号,Alt+Shift+Click 命中窗口)
+- **骨架**(`SqlSkeletonBuilder`,纯函数):
+  select(fn 名含 count → COUNT(*),WHERE=参数 AND)/ delete(同 WHERE)/
+  insert(参数类型为已索引 struct → 字段展开为列)/ update(非 id 字段 SET,WHERE id)
+- **表名**:现有语句 FROM/INTO 最高频者(未保存文档优先);缺省 namespace 末段去 `_dao` 等后缀
+
+### 16.3 连带问题与修复
+
+| # | 问题 | 修复 |
+|---|------|------|
+| 1 | 生成后未保存状态 Ctrl+Click 报 "Cannot find declaration to go to" | **未保存文档兜底下沉到 `XmlNamespaceIndex.findStatement`**(currentMapperInfo:打开且已修改 → 解析当前文档)—— 一处修复全体调用方受益 |
+| 2 | 生成语句间无空行 / `</insert></mapper>` 挤行 | 无条件前置 `\n` + 语句后补 `\n`(`</mapper>` 独占一行) |
+| 3 | 气泡出现空 select 选框 | 气泡按 HTML 渲染,`<select>` 被当元素 → 文案去掉尖括号(`已生成语句:get_by_id`) |
