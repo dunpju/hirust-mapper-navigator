@@ -7,7 +7,7 @@
 -->
 <mapper namespace="crate::app::dao::privilege_project_dao">
 
-    <select id="get" resultType="PrivilegeProject">
+    <select id="" resultType="PrivilegeProject">
         SELECT * FROM privilege_project
     </select>
 

@@ -57,13 +57,32 @@ class XmlMapperCompletionPopupHandler : TypedHandlerDelegate() {
 
                     val items: List<LookupElement> = when {
                         tag.name == "mapper" && attr.name == "namespace" ->
-                            XmlMapperCompletionItems.namespaceItems(project)
+                            XmlMapperCompletionItems.namespaceItems(project).map { it as LookupElement }
                         tag.name in XmlMapperParser.STATEMENT_TAGS && attr.name == "id" ->
-                            XmlMapperCompletionItems.statementIdItems(project, psiFile.virtualFile, tag.name, valueText)
+                            XmlMapperCompletionItems.statementIdItems(
+                                project, psiFile.virtualFile, tag.name, valueText
+                            ).map { it as LookupElement }
                         else -> emptyList()
                     }
                     if (items.isNotEmpty()) {
-                        LookupManager.getInstance(project).showLookup(editor, items.toTypedArray(), prefix)
+                        // 延迟显示:错开平台内置自动补全的启动窗口
+                        // (立即显示会被随后的内置会话清空/隐藏 —— 表现为"闪现即消失")
+                        SHOW_ALARM.cancelAllRequests()
+                        SHOW_ALARM.addRequest({
+                            if (project.isDisposed || editor.isDisposed) return@addRequest
+                            try {
+                                val lookup = LookupManager.getInstance(project)
+                                    .showLookup(editor, items.toTypedArray(), prefix)
+                                LOG.info("[hirust-mapper-navigator] TP lookup shown " +
+                                        "(active=${LookupManager.getInstance(project).activeLookup != null})")
+                                // 插入后修复 PSI:补全插入与延迟弹窗竞争会导致 XML 增量重解析
+                                // 区间错乱(表现为 namespace 引用区间被拉伸到后续标签),
+                                // 在插入后的下一次文档变更时强制全量重解析消除错乱。
+                                schedulePostInsertReparse(project, editor)
+                            } catch (e: Exception) {
+                                LOG.warn("[hirust-mapper-navigator] TP show failed: ${e.message}")
+                            }
+                        }, SHOW_DELAY_MS)
                     }
                 }
             } catch (e: Exception) {
@@ -73,8 +92,37 @@ class XmlMapperCompletionPopupHandler : TypedHandlerDelegate() {
         return Result.CONTINUE
     }
 
+    /**
+     * 弹窗显示后挂一次性文档监听:插入(Enter/Tab)引发的文档变更后,
+     * 提交文档并强制该文件全量重解析,消除增量重解析的区间错乱。
+     */
+    private fun schedulePostInsertReparse(project: Project, editor: Editor) {
+        val doc = editor.document
+        val listener = object : com.intellij.openapi.editor.event.DocumentListener {
+            override fun documentChanged(event: com.intellij.openapi.editor.event.DocumentEvent) {
+                doc.removeDocumentListener(this)
+                ApplicationManager.getApplication().invokeLater({
+                    if (project.isDisposed || editor.isDisposed) return@invokeLater
+                    try {
+                        PsiDocumentManager.getInstance(project).commitDocument(doc)
+                        val vf = editor.virtualFile
+                        if (vf != null) {
+                            com.intellij.util.FileContentUtilCore.reparseFiles(vf)
+                            LOG.info("[hirust-mapper-navigator] TP post-insert reparse done: ${vf.name}")
+                        }
+                    } catch (e: Exception) {
+                        LOG.warn("[hirust-mapper-navigator] TP reparse failed: ${e.message}")
+                    }
+                }, project.disposed)
+            }
+        }
+        doc.addDocumentListener(listener)
+    }
+
     companion object {
         private val LOG = com.intellij.openapi.diagnostic.Logger
             .getInstance("HirustCompletionDiag")
+        private val SHOW_ALARM = com.intellij.util.Alarm()
+        private const val SHOW_DELAY_MS = 250
     }
 }

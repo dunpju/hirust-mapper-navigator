@@ -80,6 +80,9 @@ class XmlNamespaceToDaoReference(element: XmlAttributeValue) :
         return NavigationUtil.findElement(loc.file, project, loc.dao.attrOffset)
     }
 
+    /** 软引用:解析失败不标红(平台对硬引用的未解析结果自动画红色波浪线+错误图标) */
+    override fun isSoft(): Boolean = true
+
     /** 补全候选由 [XmlMapperCompletionContributor] 统一提供(避免与引用变体重复) */
     override fun getVariants(): Array<LookupElement> = emptyArray()
 }
@@ -101,6 +104,9 @@ class XmlStatementIdToMethodReference(element: XmlAttributeValue) :
         val loc = RustDaoIndex.getInstance(project).findMethod(info.namespace, id, tag.name) ?: return null
         return NavigationUtil.findElement(loc.file, project, loc.method.fnOffset)
     }
+
+    /** 软引用:解析失败不标红(如 id 尚未在 Rust 侧定义时不画错误波浪线) */
+    override fun isSoft(): Boolean = true
 
     /** 补全候选由 [XmlMapperCompletionContributor] 统一提供(避免与引用变体重复) */
     override fun getVariants(): Array<LookupElement> = emptyArray()
@@ -125,6 +131,9 @@ class XmlResultTypeToRustReference(element: XmlAttributeValue) :
         val loc = RustDaoIndex.getInstance(project).findType(raw) ?: return null
         return NavigationUtil.findElement(loc.file, project, loc.type.nameOffset)
     }
+
+    /** 软引用:同名 struct 未索引时不标红 */
+    override fun isSoft(): Boolean = true
 
     override fun getVariants(): Array<LookupElement> = emptyArray()
 }
@@ -166,6 +175,9 @@ class XmlIncludeRefidToSqlReference(element: XmlAttributeValue) :
         log.info("[hirust-mapper-navigator] include refid unresolved: \"$refid\" in ${vFile.path}")
         return null
     }
+
+    /** 软引用:片段不存在时不标红 */
+    override fun isSoft(): Boolean = true
 
     /** 读当前文件并解析 sql 片段(ReadAction 包裹;失败返回 null) */
     private fun readCurrentFragments(vFile: com.intellij.openapi.vfs.VirtualFile): List<SqlFragmentInfo>? =
@@ -222,6 +234,9 @@ class XmlSqlIdToIncludesReference(element: XmlAttributeValue) :
     }
 
     override fun resolve(): PsiElement? = multiResolve(false).firstOrNull()?.element
+
+    /** 软引用:无 include 引用时不标红 */
+    override fun isSoft(): Boolean = true
 
     override fun getVariants(): Array<LookupElement> = emptyArray()
 }

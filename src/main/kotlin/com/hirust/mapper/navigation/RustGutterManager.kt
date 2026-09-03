@@ -54,11 +54,10 @@ class RustGutterManager(private val project: Project) : FileEditorManagerListene
     }
 
     private fun paintGutter(editor: Editor, vFile: VirtualFile) {
-        // P2:文件与文档均未变化时跳过重绘(切换标签不再反复增删 highlighter)
+        // 注:不做图章跳过优化 —— 图标依赖的 XML 侧状态(索引刷新/未保存编辑)
+        // 不体现在本 .rs 文档的 modificationStamp 里,跳过会导致切换标签后图标不刷新。
+        // 重绘本身为缓存解析 + 少量 highlighter 增删,成本可忽略。
         val stamp = editor.document.modificationStamp
-        if (editor.getUserData(PAINTED_STAMP_KEY) == stamp &&
-            editor.getUserData(CURRENT_FILE_KEY) == vFile
-        ) return
 
         val daos = try {
             // getParsed 内部按 Document 坐标(\n 归一化)解析,
@@ -96,7 +95,21 @@ class RustGutterManager(private val project: Project) : FileEditorManagerListene
         for (dao in daos) {
             daoXml[dao] = xmlIndex.findXmlFile(dao.namespace)
             for (m in dao.methods) {
-                methodStmt[m] = xmlIndex.findStatement(dao.namespace, m.id, m.stmtTag)
+                var loc = xmlIndex.findStatement(dao.namespace, m.id, m.stmtTag)
+                var source = "index"
+                if (loc == null) {
+                    // 兜底:XML 编辑器中【未保存】的修改不进索引(索引基于磁盘),
+                    // 直接解析该 XML 当前文档,使补全插入的语句立即联动图标
+                    loc = findStatementUnsaved(project, dao.namespace, m.id, m.stmtTag)
+                    source = "unsaved"
+                }
+                if (loc == null) {
+                    log.info("[hirust-mapper-navigator] TP icon miss: method=${m.id}(${m.stmtTag}) " +
+                            "ns=${dao.namespace} —— 索引与未保存文档中均无该语句")
+                } else {
+                    log.debug("[hirust-mapper-navigator] TP icon hit: ${m.id} via $source")
+                }
+                methodStmt[m] = loc
             }
         }
 
@@ -171,6 +184,32 @@ class RustGutterManager(private val project: Project) : FileEditorManagerListene
         editor.putUserData(PAINTED_STAMP_KEY, stamp)
         attachDocumentListener(editor)
         log.debug("[hirust-mapper-navigator] Gutter painted: ${created.size} markers in ${vFile.name}")
+    }
+
+    /**
+     * 在【未保存】的 XML 编辑器文档中查找语句兜底:
+     * 索引基于磁盘内容,补全插入/手改的语句在保存前不可见,
+     * 这里直接解析该 XML 的当前文档使图标立即联动。
+     */
+    private fun findStatementUnsaved(
+        project: Project,
+        namespace: String,
+        id: String,
+        tag: String
+    ): XmlNamespaceIndex.XmlStatementLocation? {
+        return try {
+            val xmlFile = XmlNamespaceIndex.getInstance(project).findXmlFile(namespace) ?: return null
+            val fdm = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance()
+            val doc = fdm.getDocument(xmlFile) ?: return null
+            if (!fdm.isFileModified(xmlFile)) return null // 与磁盘一致:索引已覆盖
+            val info = XmlMapperParser.parse(doc.text) ?: return null
+            val stmt = info.statements.firstOrNull { it.id == id && it.tag == tag }
+                ?: info.statements.firstOrNull { it.id == id }
+                ?: return null
+            XmlNamespaceIndex.XmlStatementLocation(xmlFile, stmt, info.namespace)
+        } catch (_: Exception) {
+            null
+        }
     }
 
     /**

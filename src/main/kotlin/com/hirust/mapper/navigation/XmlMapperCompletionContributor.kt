@@ -70,6 +70,7 @@ object XmlMapperCompletionItems {
     /**
      * 语句 id 候选:当前 mapper 的 namespace 对应 DAO 中,
      * 标签类型匹配且未被本文件其他语句/片段占用的方法 id。
+     * 索引未收录该文件时兜底直读解析(消除对索引时序的依赖)。
      */
     fun statementIdItems(
         project: com.intellij.openapi.project.Project,
@@ -78,11 +79,25 @@ object XmlMapperCompletionItems {
         currentId: String
     ): List<LookupElementBuilder> {
         if (vFile == null) return emptyList()
-        val info = XmlNamespaceIndex.getInstance(project).getMapperInfo(vFile) ?: return emptyList()
-        val daoLoc = RustDaoIndex.getInstance(project).findDaoByNamespace(info.namespace) ?: return emptyList()
+        val log = com.intellij.openapi.diagnostic.Logger.getInstance("HirustCompletionDiag")
+        val indexed = XmlNamespaceIndex.getInstance(project).getMapperInfo(vFile)
+        val info = indexed ?: run {
+            // 兜底:直读当前文件解析 namespace 与已用 id(文件刚打开/索引未收录时)
+            val content = try {
+                NavigationUtil.loadTextDocumentAligned(vFile)
+            } catch (_: Exception) {
+                null
+            } ?: return emptyList()
+            XmlMapperParser.parse(content) ?: return emptyList()
+        }
+        val daoLoc = RustDaoIndex.getInstance(project).findDaoByNamespace(info.namespace) ?: run {
+            log.info("[hirust-mapper-navigator] TP items: no dao for ns=${info.namespace}")
+            return emptyList()
+        }
         val usedIds = (info.statements.map { it.id } + info.sqlFragments.map { it.id })
             .toSet() - currentId
-        return daoLoc.dao.methods
+        val methods = daoLoc.dao.methods
+        val items = methods
             .filter { it.stmtTag == tagName && it.id !in usedIds }
             .map { m ->
                 LookupElementBuilder.create(m.id)
@@ -90,5 +105,9 @@ object XmlMapperCompletionItems {
                     .withTypeText("fn ${m.fnName}")
                     .withTailText("  <${m.stmtTag}>", true)
             }
+        log.info("[hirust-mapper-navigator] TP items: tag=$tagName fromIndex=${indexed != null} " +
+                "ns=${info.namespace} methods=${methods.size} items=${items.size} " +
+                "methodIds=${methods.joinToString { "${it.id}(${it.stmtTag})" }}")
+        return items
     }
 }
