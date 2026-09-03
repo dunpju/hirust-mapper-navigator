@@ -19,7 +19,7 @@
         ]]>
     </description>
     <vendor email="dengpju@hirust.com" url="https://hirust.com">hirust</vendor>
-    <version>1.3.0</version>
+    <version>1.4.3</version>
     <icon>icons/pluginIcon.svg</icon>
 
     <depends>com.intellij.modules.platform</depends>
@@ -66,7 +66,22 @@
         <!-- 启动预热:后台线程完成一次协调扫描,首次交互零等待 -->
         <postStartupActivity
             implementation="com.hirust.mapper.navigation.MapperWarmUpStartup"/>
+
+        <!-- 通知气泡组(JPA 语句生成等功能的提示) -->
+        <notificationGroup id="Hirust Mapper Navigator" displayType="BALLOON"/>
     </extensions>
+
+    <actions>
+        <!-- JPA 提示式语句生成:主通道为 Alt+Shift+Click(见 RustGutterManager),
+             菜单项作为补充入口(Generate 菜单 / 右键菜单) -->
+        <action id="hirust.mapper.navigator.GenerateXmlStatement"
+            class="com.hirust.mapper.navigation.GenerateXmlStatementAction"
+            text="Generate XML Statement (mapper)"
+            description="为光标处的 #[mapper_*] 方法生成 XML 语句骨架(已存在则跳转);亦可用 Alt+Shift+Click 触发">
+            <add-to-group group-id="GenerateGroup" anchor="first"/>
+            <add-to-group group-id="EditorPopupMenu" anchor="first"/>
+        </action>
+    </actions>
 
     <!-- VFS 文件变更监听(XML 与 .rs 双侧索引刷新)。
          注意:平台不存在 com.intellij.fileListener 扩展点,

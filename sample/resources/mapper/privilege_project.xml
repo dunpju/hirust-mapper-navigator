@@ -27,4 +27,12 @@
         DELETE FROM privilege_project WHERE id = #{id}
     </delete>
 
+    <insert id="create2">
+        INSERT INTO privilege_project (id, name)
+        VALUES (#{id}, #{name})
+    </insert>
+
+    <select id="get_by_id">
+        SELECT * FROM privilege_project WHERE id = #{id}
+    </select>
 </mapper>

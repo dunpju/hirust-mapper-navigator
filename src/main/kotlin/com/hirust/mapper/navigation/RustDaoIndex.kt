@@ -188,12 +188,13 @@ class RustDaoIndex(private val project: Project) {
         return DaoLocation(vf, dao)
     }
 
-    /** 查找覆盖指定偏移的方法(行标记:fn 锚点 / Rust id 字面量引用) */
+    /** 查找覆盖指定偏移的方法(行标记/生成动作:宏行至签名闭括号均可命中) */
     fun findMethodAt(vf: VirtualFile, offset: Int): MethodLocation? {
         val daos = getParsed(vf) ?: return null
         for (dao in daos) {
             val m = dao.methods.lastOrNull {
-                offset >= it.macroOffset && offset <= it.fnOffset + it.fnName.length
+                val end = if (it.sigEndOffset > 0) it.sigEndOffset + 1 else it.fnOffset + it.fnName.length
+                offset >= it.macroOffset && offset <= end
             }
             if (m != null) return MethodLocation(vf, dao, m)
         }

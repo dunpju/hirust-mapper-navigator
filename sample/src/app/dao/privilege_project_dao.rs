@@ -38,6 +38,16 @@ impl PrivilegeProjectDao {
     pub async fn remove1(&self, id: u64) -> u64 {
         todo!()
     }
+
+    #[mapper_query]
+    pub async fn get_by_id(&self, id: u64) -> PrivilegeProject {
+        todo!()
+    }
+
+    #[mapper_insert]
+    pub async fn create2(&self, p: &PrivilegeProject) -> u64 {
+        todo!()
+    }
 }
 
 pub struct PrivilegeProject {

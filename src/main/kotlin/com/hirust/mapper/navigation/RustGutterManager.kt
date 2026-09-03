@@ -144,6 +144,7 @@ class RustGutterManager(private val project: Project) : FileEditorManagerListene
         }
         editor.putUserData(LINK_RANGES_KEY, linkRanges)
         attachHover(editor)
+        attachAltShiftClick(editor)
 
         val created = mutableListOf<RangeHighlighter>()
         fun addMarker(lineOffset: Int, tooltip: String, nav: () -> Unit) {
@@ -239,6 +240,38 @@ class RustGutterManager(private val project: Project) : FileEditorManagerListene
                 handleHover(e)
 
             override fun mouseDragged(e: com.intellij.openapi.editor.event.EditorMouseEvent) {}
+        })
+    }
+
+    /**
+     * Alt+Shift+Click → JPA 语句生成(v1.4.1):
+     * 在 .rs 编辑器内按住 Alt+Shift 点击 #[mapper_*] 方法,直接生成 XML 语句骨架。
+     * 与 Ctrl+Click 导航(Ctrl 修饰)互不冲突。
+     */
+    private fun attachAltShiftClick(editor: Editor) {
+        if (editor.getUserData(ALT_SHIFT_CLICK_ATTACHED_KEY) == true) return
+        editor.putUserData(ALT_SHIFT_CLICK_ATTACHED_KEY, true)
+        editor.addEditorMouseListener(object :
+            com.intellij.openapi.editor.event.EditorMouseListener {
+            override fun mouseClicked(e: com.intellij.openapi.editor.event.EditorMouseEvent) {
+                val mods = e.mouseEvent.modifiersEx
+                val altShift = (mods and java.awt.event.InputEvent.ALT_DOWN_MASK) != 0 &&
+                        (mods and java.awt.event.InputEvent.SHIFT_DOWN_MASK) != 0
+                if (!altShift) return
+                if ((mods and java.awt.event.InputEvent.CTRL_DOWN_MASK) != 0) return
+                val vFile = editor.getUserData(CURRENT_FILE_KEY) ?: return
+                val offset = e.offset
+                if (offset < 0) return
+                GenerateXmlStatementAction.generateAt(project, vFile, offset)
+            }
+
+            override fun mousePressed(e: com.intellij.openapi.editor.event.EditorMouseEvent) {}
+
+            override fun mouseReleased(e: com.intellij.openapi.editor.event.EditorMouseEvent) {}
+
+            override fun mouseEntered(e: com.intellij.openapi.editor.event.EditorMouseEvent) {}
+
+            override fun mouseExited(e: com.intellij.openapi.editor.event.EditorMouseEvent) {}
         })
     }
 
@@ -339,6 +372,9 @@ class RustGutterManager(private val project: Project) : FileEditorManagerListene
             )
         private val HOVER_ATTACHED_KEY = Key.create<Boolean>(
             "hirust.mapper.navigator.hover.attached"
+        )
+        private val ALT_SHIFT_CLICK_ATTACHED_KEY = Key.create<Boolean>(
+            "hirust.mapper.navigator.altshiftclick.attached"
         )
         private val PREV_CURSOR_KEY = Key.create<java.awt.Cursor>(
             "hirust.mapper.navigator.hover.prevCursor"

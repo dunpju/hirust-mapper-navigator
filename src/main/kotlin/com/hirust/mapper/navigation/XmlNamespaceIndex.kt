@@ -272,13 +272,31 @@ class XmlNamespaceIndex(private val project: Project) {
         }.distinct()
 
         for (file in candidates) {
-            val info = mapperInfoByFile[file] ?: continue
+            // 未保存文档兜底:索引基于磁盘,编辑器中的修改(如语句生成插入)保存前不可见
+            val info = currentMapperInfo(file) ?: continue
             val stmt = info.statements.firstOrNull { it.id == id && (tag == null || it.tag == tag) }
                 ?: info.statements.firstOrNull { it.id == id }
                 ?: continue
             return XmlStatementLocation(file, stmt, info.namespace)
         }
         return null
+    }
+
+    /**
+     * 获取文件的 mapper 解析信息:优先未保存的打开文档(含最新编辑),
+     * 与磁盘一致时直接用缓存索引。
+     */
+    private fun currentMapperInfo(file: VirtualFile): MapperInfo? {
+        val fdm = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance()
+        val doc = fdm.getDocument(file)
+        if (doc != null && fdm.isFileModified(file)) {
+            return try {
+                XmlMapperParser.parse(doc.text)
+            } catch (_: Exception) {
+                mapperInfoByFile[file]
+            }
+        }
+        return mapperInfoByFile[file]
     }
 
     /**

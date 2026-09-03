@@ -29,7 +29,18 @@ data class MethodInfo(
     /** 宏名称标识符的偏移(纯文本模式宏名引用的区间起点) */
     val macroNameOffset: Int,
     /** fn 名字标识符偏移(XML→Rust 跳转落点) */
-    val fnOffset: Int
+    val fnOffset: Int,
+    /** fn 参数列表(生成 XML 语句骨架的 WHERE/列来源;self 已剔除) */
+    val params: List<FnParam> = emptyList(),
+    /** fn 签名结束(参数闭括号)偏移;-1 表示未捕获。生成动作的光标命中窗口延伸到此 */
+    val sigEndOffset: Int = -1
+)
+
+/** fn 参数(name: Type 形态,self 已剔除) */
+data class FnParam(
+    val name: String,
+    /** 类型原文(如 u64、Option<String>、&PrivilegeProject) */
+    val typeText: String
 )
 
 /** Rust struct 类型定义信息(XML resultType → Rust 跳转目标) */
@@ -37,7 +48,15 @@ data class RustTypeInfo(
     /** 类型名 */
     val name: String,
     /** struct 名称标识符偏移(resultType 跳转落点) */
-    val nameOffset: Int
+    val nameOffset: Int,
+    /** struct 字段(普通结构体;元组/单元结构体为空)—— 生成 INSERT 列来源 */
+    val fields: List<StructField> = emptyList()
+)
+
+/** struct 字段(name: Type 形态) */
+data class StructField(
+    val name: String,
+    val typeText: String
 )
 
 data class DaoInfo(
@@ -98,8 +117,100 @@ object RustSourceParser {
      */
     fun parseStructTypes(content: String): List<RustTypeInfo> =
         STRUCT_DEF.findAll(content).map { m ->
-            RustTypeInfo(m.groupValues[1], m.groups[1]!!.range.first)
+            RustTypeInfo(
+                m.groupValues[1],
+                m.groups[1]!!.range.first,
+                parseStructBodyFields(content, m.range.last + 1)
+            )
         }.toList()
+
+    /** struct 字段行:`pub name: Type,`(pub 可带可见性限定) */
+    private val STRUCT_FIELD_LINE =
+        Regex("""^(?:pub(?:\s*\([^)]*\))?\s+)?([a-z_][a-zA-Z0-9_]*)\s*:\s*(.+?)[,;]?\s*$""")
+
+    /** 解析 struct 体 {...} 内的字段(元组/单元结构体返回空) */
+    private fun parseStructBodyFields(content: String, from: Int): List<StructField> {
+        val n = content.length
+        var p = from
+        while (p < n && content[p].isWhitespace()) p++
+        if (p < n && content[p] == '<') {
+            val gc = findGenericClose(content, p)
+            if (gc > 0) p = gc + 1
+            while (p < n && content[p].isWhitespace()) p++
+        }
+        if (p >= n || content[p] != '{') return emptyList()
+        val close = findMatchingBrace(content, p)
+        if (close < 0) return emptyList()
+        return content.substring(p + 1, close).lineSequence().mapNotNull { line ->
+            val t = line.trim()
+            if (t.isEmpty() || t.startsWith("#") || t.startsWith("//")) return@mapNotNull null
+            val fm = STRUCT_FIELD_LINE.find(t) ?: return@mapNotNull null
+            StructField(fm.groupValues[1], fm.groupValues[2].trim())
+        }.toList()
+    }
+
+    /** 匹配 '{' 的 '}'(跳过字符串字面量与嵌套大括号) */
+    private fun findMatchingBrace(content: String, openIndex: Int): Int {
+        val n = content.length
+        var depth = 0
+        var i = openIndex
+        while (i < n) {
+            when (content[i]) {
+                '{' -> depth++
+                '}' -> {
+                    depth--
+                    if (depth == 0) return i
+                }
+                '"' -> i = skipString(content, i)
+            }
+            i++
+        }
+        return -1
+    }
+
+    /**
+     * 解析 fn 参数列表文本为 name/type 对。
+     * 剔除 self(含 &self / &mut self / mut self);无类型的极简参数被忽略。
+     */
+    fun parseFnParams(paramsText: String): List<FnParam> {
+        if (paramsText.isBlank()) return emptyList()
+        val parts = mutableListOf<String>()
+        val sb = StringBuilder()
+        var depth = 0
+        for (c in paramsText) {
+            when (c) {
+                '(', '[', '<' -> {
+                    depth++
+                    sb.append(c)
+                }
+                ')', ']', '>' -> {
+                    depth--
+                    sb.append(c)
+                }
+                ',' -> if (depth == 0) {
+                    parts += sb.toString()
+                    sb.clear()
+                } else {
+                    sb.append(c)
+                }
+                else -> sb.append(c)
+            }
+        }
+        if (sb.isNotBlank()) parts += sb.toString()
+
+        return parts.mapNotNull { part ->
+            val seg = part.trim()
+            if (seg.isEmpty()) return@mapNotNull null
+            val m = FN_PARAM_LINE.find(seg) ?: return@mapNotNull null
+            val name = m.groupValues[1]
+            if (name == "self") return@mapNotNull null
+            FnParam(name, m.groupValues[2].trim())
+        }
+    }
+
+    /** 参数形态:可带 & / &mut / mut 前缀的 `name: Type` */
+    private val FN_PARAM_LINE =
+        Regex("""^(?:mut\s+|&(?:\s*mut)?\s*)*([a-z_][a-zA-Z0-9_]*)\s*:\s*(.+)$""", RegexOption.DOT_MATCHES_ALL)
 
     /**
      * 解析源码,返回所有带 namespace 的 DAO 块。
@@ -148,7 +259,9 @@ object RustSourceParser {
                         macroName = attr.name,
                         macroOffset = attr.start,
                         macroNameOffset = attr.nameStart,
-                        fnOffset = fn.nameOffset
+                        fnOffset = fn.nameOffset,
+                        params = parseFnParams(fn.paramsText),
+                        sigEndOffset = fn.parenClose
                     )
                 }
             }
@@ -284,7 +397,13 @@ object RustSourceParser {
     // fn 查找
     // ------------------------------------------------------------------
 
-    data class FnRef(val name: String, val nameOffset: Int)
+    data class FnRef(
+        val name: String,
+        val nameOffset: Int,
+        val paramsText: String = "",
+        /** 参数闭括号偏移(含),未捕获为 -1 */
+        val parenClose: Int = -1
+    )
 
     /**
      * 在 from 之后查找属性所附着的目标 fn:
@@ -321,7 +440,26 @@ object RustSourceParser {
                         val nameStart = k
                         while (k < n && WORD_CHARS(content[k])) k++
                         if (k == nameStart) return null
-                        return FnRef(content.substring(nameStart, k), nameStart)
+                        // 捕获参数列表:(跳过泛型 <T: ...> 后的平衡括号内容)
+                        var p = k
+                        while (p < n && content[p].isWhitespace()) p++
+                        if (p < n && content[p] == '<') {
+                            val gc = findGenericClose(content, p)
+                            if (gc > 0) {
+                                p = gc + 1
+                                while (p < n && content[p].isWhitespace()) p++
+                            }
+                        }
+                        var paramsText = ""
+                        var parenClose = -1
+                        if (p < n && content[p] == '(') {
+                            val close = findBalancedClose(content, p)
+                            if (close > 0) {
+                                paramsText = content.substring(p + 1, close)
+                                parenClose = close
+                            }
+                        }
+                        return FnRef(content.substring(nameStart, k), nameStart, paramsText, parenClose)
                     }
                     if (word !in FN_MODIFIERS) return null
                     i = j
