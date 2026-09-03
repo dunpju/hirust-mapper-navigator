@@ -612,8 +612,44 @@ sample/
 
 ## 十一、后续展望(本次不做)
 
-- XML 补全:id/namespace/refid/resultMap 属性值补全(Reference.getVariants 已预留接入点)
-- `<include refid>` ↔ `<sql id>` 跳转与检查
+- `<include refid>` ↔ `<sql id>` 跳转与检查(v1.2.4/1.2.6 已做)
 - JPA 提示:Rust 方法名 Alt+Enter 生成 XML 语句骨架
 - 检查(Inspection):XML 语句无对应 Rust 方法 / Rust 方法无对应语句的告警
 - 数据库代码生成(依赖 `com.intellij.database`,仅 RustRover/Ultimate 可用)
+
+---
+
+## 十五、XML 自动补全攻坚记录(v1.3.0)
+
+需求:`<mapper namespace="` / 语句 `id="` 属性值内**输入即弹出**补全(namespace 候选=全项目 DAO;
+id 候选=标签类型匹配且未被本文件占用的方法 id)。
+
+### 15.1 补全框架三层通道在本环境全部失效(逐层日志实锤)
+
+| 层 | 尝试 | 结果(日志证据) |
+|----|------|----------------|
+| 1 | `completionContributor language="XML"`(注册正确) | `CC invoked` 零次 —— 补全会话从不咨询 |
+| 2 | 引用 `getVariants()` + `AutoPopupController.scheduleAutoPopup` | `scheduleAutoPopup done` 后 getVariants 零次调用 |
+| 3 | `UsageViewPresentation` 系(fluent setter) | Kotlin 属性赋值不落 setter(该类 setter 返回 this) |
+
+### 15.2 最终架构(全部稳定 API)
+
+```
+TypedHandlerDelegate.charTyped(第4参已从 FileType 改为 PsiFile —— 2024.2 签名变化)
+  └─ invokeLater → commitAndRunReadAction(避免陈旧 PSI)
+      ├─ 判定属性上下文(namespace / 语句 id)+ 计算输入前缀
+      ├─ 候选:XmlMapperCompletionItems(索引 + 未保存文档兜底)
+      └─ Alarm 延迟 250ms → LookupManager.showLookup(editor, items, prefix)
+            │  (立即显示会被内置补全会话清空 —— "闪现即消失";延迟错峰解决)
+            └─ 一次性 DocumentListener:插入后 commitDocument
+                 + FileContentUtilCore.reparseFiles(vf)
+                    (补全插入与延迟弹窗竞争导致 XML 增量重解析区间错乱 ——
+                     表现为 namespace 引用悬停区间拉伸到后续标签,强制重解析修复)
+```
+
+### 15.3 连带修复
+
+- **软引用**:全部 XML 引用加 `isSoft()=true` —— 平台对未解析硬引用自动画红波浪线+错误图标,软引用消除噪音
+- **图标未保存联动**:RustGutterManager 语句查找失败时直读 XML 当前文档(未保存内容),补全插入后无需保存即出图标
+- **移除图章跳过优化**:图标依赖的 XML 侧状态不在 .rs 文档图章中,跳过导致切换标签后不刷新
+- **协调扫描风暴**:`rebuildAll` 加 `ready` 短路(曾每秒 ~7 次全项目扫描;强制重建走 `forceRebuild`)

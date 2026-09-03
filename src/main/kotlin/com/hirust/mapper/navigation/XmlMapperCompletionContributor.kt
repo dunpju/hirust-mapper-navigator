@@ -28,7 +28,6 @@ class XmlMapperCompletionContributor : CompletionContributor() {
 
     override fun fillCompletionVariants(parameters: CompletionParameters, result: CompletionResultSet) {
         val pos = parameters.position
-        log.info("[hirust-mapper-navigator] CC invoked: file=${parameters.originalFile.name}")
         // 补全位置可能是插入了 dummy 标识符的副本,沿父链找属性值
         val attrValue = generateSequence<PsiElement>(pos) { it.parent }
             .take(6).mapNotNull { it as? XmlAttributeValue }.firstOrNull() ?: return
@@ -79,7 +78,6 @@ object XmlMapperCompletionItems {
         currentId: String
     ): List<LookupElementBuilder> {
         if (vFile == null) return emptyList()
-        val log = com.intellij.openapi.diagnostic.Logger.getInstance("HirustCompletionDiag")
         val indexed = XmlNamespaceIndex.getInstance(project).getMapperInfo(vFile)
         val info = indexed ?: run {
             // 兜底:直读当前文件解析 namespace 与已用 id(文件刚打开/索引未收录时)
@@ -90,14 +88,10 @@ object XmlMapperCompletionItems {
             } ?: return emptyList()
             XmlMapperParser.parse(content) ?: return emptyList()
         }
-        val daoLoc = RustDaoIndex.getInstance(project).findDaoByNamespace(info.namespace) ?: run {
-            log.info("[hirust-mapper-navigator] TP items: no dao for ns=${info.namespace}")
-            return emptyList()
-        }
+        val daoLoc = RustDaoIndex.getInstance(project).findDaoByNamespace(info.namespace) ?: return emptyList()
         val usedIds = (info.statements.map { it.id } + info.sqlFragments.map { it.id })
             .toSet() - currentId
-        val methods = daoLoc.dao.methods
-        val items = methods
+        return daoLoc.dao.methods
             .filter { it.stmtTag == tagName && it.id !in usedIds }
             .map { m ->
                 LookupElementBuilder.create(m.id)
@@ -105,9 +99,5 @@ object XmlMapperCompletionItems {
                     .withTypeText("fn ${m.fnName}")
                     .withTailText("  <${m.stmtTag}>", true)
             }
-        log.info("[hirust-mapper-navigator] TP items: tag=$tagName fromIndex=${indexed != null} " +
-                "ns=${info.namespace} methods=${methods.size} items=${items.size} " +
-                "methodIds=${methods.joinToString { "${it.id}(${it.stmtTag})" }}")
-        return items
     }
 }

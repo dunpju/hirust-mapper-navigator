@@ -96,18 +96,14 @@ class RustGutterManager(private val project: Project) : FileEditorManagerListene
             daoXml[dao] = xmlIndex.findXmlFile(dao.namespace)
             for (m in dao.methods) {
                 var loc = xmlIndex.findStatement(dao.namespace, m.id, m.stmtTag)
-                var source = "index"
                 if (loc == null) {
                     // 兜底:XML 编辑器中【未保存】的修改不进索引(索引基于磁盘),
                     // 直接解析该 XML 当前文档,使补全插入的语句立即联动图标
                     loc = findStatementUnsaved(project, dao.namespace, m.id, m.stmtTag)
-                    source = "unsaved"
                 }
                 if (loc == null) {
-                    log.info("[hirust-mapper-navigator] TP icon miss: method=${m.id}(${m.stmtTag}) " +
+                    log.debug("[hirust-mapper-navigator] icon miss: method=${m.id}(${m.stmtTag}) " +
                             "ns=${dao.namespace} —— 索引与未保存文档中均无该语句")
-                } else {
-                    log.debug("[hirust-mapper-navigator] TP icon hit: ${m.id} via $source")
                 }
                 methodStmt[m] = loc
             }

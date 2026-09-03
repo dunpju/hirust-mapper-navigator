@@ -72,6 +72,17 @@ let mapper_config = HirustMapperConfig::new()
     .with_mapper_paths(vec!["resources/mapper/**/*.xml".to_string()]);
 ```
 
+### 5. XML 自动补全(v1.3.0)
+
+在 mapper XML 的属性值内**输入即弹出**原生补全列表(无需 Ctrl+Space):
+
+- `<mapper namespace="` → 项目全部已索引 DAO 的 namespace(右侧显示 DAO 类型名 + 文件尾注)
+- `<select|insert|update|delete id="` → 对应 DAO 中**标签类型匹配**且**未被本文件占用**的方法 id(右侧显示 `fn 函数名` + 语句标签)
+- 插入后自动强制 PSI 重解析(修复补全插入引发的区间错乱);`.rs` 侧小鸟图标**无需保存即联动**(读取未保存文档)
+
+> 实现说明:补全框架的三层通道(CompletionContributor 咨询 / autopopup 会话 / 引用 getVariants)在本插件环境均不可用,
+> 最终采用 `LookupManager.showLookup`(稳定 API)+ 延迟错峰显示 + 插入后重解析实现,详见 [PLAN.md](PLAN.md)。
+
 ### 环境兼容性
 
 | 环境 | Rust→XML Ctrl+Click | Rust 悬停下划线/图标 | XML→Rust Ctrl+Click | XML→Rust 图标 |
@@ -109,13 +120,13 @@ git push origin v1.0.0
 gradlew.bat buildPlugin
 ```
 
-构建产物位于 `build/distributions/hirust-mapper-navigator-1.2.7.zip`。
+构建产物位于 `build/distributions/hirust-mapper-navigator-1.3.0.zip`。
 
 ### 在 RustRover 中安装
 
 1. 打开 RustRover → **Settings** → **Plugins**
 2. 点击 **⚙️** → **Install Plugin from Disk...**
-3. 选择 `build/distributions/hirust-mapper-navigator-1.2.7.zip`
+3. 选择 `build/distributions/hirust-mapper-navigator-1.3.0.zip`
 4. 重启 RustRover
 
 ### 调试模式运行
@@ -178,6 +189,6 @@ hirust-mapper-navigator/
 - [x] XML SQL 片段 `<include refid="...">` → `<sql id="...">` 跳转（v1.2.4，支持命名空间前缀跨文件）
 - [x] `<sql id>` → `<include refid>` 反向跳转（v1.2.6，多引用弹列表）
 - [x] `resultType` → Rust struct 定义跳转（v1.2.7）
-- [ ] namespace / 语句 id 自动补全
+- [x] namespace / 语句 id 自动补全（v1.3.0，输入即弹出、标签类型过滤、排除已占用 id）
 - [ ] JPA 提示式语句生成（方法名 → XML 语句骨架）
 - [ ] 数据库表 → Rust 结构体 + DAO + XML 代码生成

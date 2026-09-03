@@ -38,9 +38,25 @@ class MapperScanCoordinator(private val project: Project) {
      * 全量重建:单次 .rs 遍历同时供给 MapperPathsConfig 与 RustDaoIndex,
      * 随后重建 XML 索引。线程安全(方法级同步),可从任意线程调用;
      * 文件读取包裹 ReadAction。
+     *
+     * 注意:完成后即短路(ready=true 直接返回)—— 各索引由文件监听器
+     * 增量维护,后续 ensureInitialized 不再重复全量扫描
+     * (曾因缺此短路出现启动后每秒 ~7 次的重复全项目扫描)。
+     * 需要强制全量时走 [forceRebuild]。
      */
     @Synchronized
     fun rebuildAll() {
+        if (ready) return
+        doRebuildAll()
+    }
+
+    /** 强制全量重建(忽略 ready 短路) */
+    @Synchronized
+    fun forceRebuild() {
+        doRebuildAll()
+    }
+
+    private fun doRebuildAll() {
         val app = ApplicationManager.getApplication()
         val rsFiles = app.runReadAction<List<VirtualFile>> {
             val rsType = FileTypeManager.getInstance().getFileTypeByExtension("rs")
@@ -80,7 +96,7 @@ class MapperScanCoordinator(private val project: Project) {
             }
             pendingRebuild.set(false)
             try {
-                rebuildAll()
+                forceRebuild()
             } catch (e: Exception) {
                 log.warn("[hirust-mapper-navigator] Debounced rebuild failed: ${e.message}")
             }

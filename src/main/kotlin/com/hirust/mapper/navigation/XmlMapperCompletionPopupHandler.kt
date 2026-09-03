@@ -30,7 +30,6 @@ class XmlMapperCompletionPopupHandler : TypedHandlerDelegate() {
         if (!c.isLetterOrDigit() && c != '_') return Result.CONTINUE
         val vFile = editor.virtualFile ?: return Result.CONTINUE
         if (vFile.extension != "xml") return Result.CONTINUE
-        LOG.info("[hirust-mapper-navigator] TP charTyped '$c' in ${vFile.name}")
 
         // 延迟到字符落盘、PSI 提交后再判定光标上下文,并直接显示原生 lookup。
         // 说明:AutoPopupController 调度后补全会话从不咨询我们的
@@ -71,22 +70,20 @@ class XmlMapperCompletionPopupHandler : TypedHandlerDelegate() {
                         SHOW_ALARM.addRequest({
                             if (project.isDisposed || editor.isDisposed) return@addRequest
                             try {
-                                val lookup = LookupManager.getInstance(project)
+                                LookupManager.getInstance(project)
                                     .showLookup(editor, items.toTypedArray(), prefix)
-                                LOG.info("[hirust-mapper-navigator] TP lookup shown " +
-                                        "(active=${LookupManager.getInstance(project).activeLookup != null})")
                                 // 插入后修复 PSI:补全插入与延迟弹窗竞争会导致 XML 增量重解析
                                 // 区间错乱(表现为 namespace 引用区间被拉伸到后续标签),
                                 // 在插入后的下一次文档变更时强制全量重解析消除错乱。
                                 schedulePostInsertReparse(project, editor)
                             } catch (e: Exception) {
-                                LOG.warn("[hirust-mapper-navigator] TP show failed: ${e.message}")
+                                LOG.warn("[hirust-mapper-navigator] Completion lookup failed: ${e.message}")
                             }
                         }, SHOW_DELAY_MS)
                     }
                 }
             } catch (e: Exception) {
-                LOG.warn("[hirust-mapper-navigator] TP failed: ${e.message}")
+                LOG.warn("[hirust-mapper-navigator] Completion typed-handler failed: ${e.message}")
             }
         }, project.disposed)
         return Result.CONTINUE
@@ -108,10 +105,10 @@ class XmlMapperCompletionPopupHandler : TypedHandlerDelegate() {
                         val vf = editor.virtualFile
                         if (vf != null) {
                             com.intellij.util.FileContentUtilCore.reparseFiles(vf)
-                            LOG.info("[hirust-mapper-navigator] TP post-insert reparse done: ${vf.name}")
+                            LOG.debug("[hirust-mapper-navigator] post-insert reparse done: ${vf.name}")
                         }
                     } catch (e: Exception) {
-                        LOG.warn("[hirust-mapper-navigator] TP reparse failed: ${e.message}")
+                        LOG.warn("[hirust-mapper-navigator] post-insert reparse failed: ${e.message}")
                     }
                 }, project.disposed)
             }
