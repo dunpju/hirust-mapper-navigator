@@ -19,7 +19,7 @@
         ]]>
     </description>
     <vendor email="dengpju@hirust.com" url="https://hirust.com">hirust</vendor>
-    <version>1.4.4</version>
+    <version>1.5.0</version>
     <icon>icons/pluginIcon.svg</icon>
 
     <depends>com.intellij.modules.platform</depends>
@@ -78,6 +78,15 @@
             class="com.hirust.mapper.navigation.GenerateXmlStatementAction"
             text="Generate XML Statement (mapper)"
             description="为光标处的 #[mapper_*] 方法生成 XML 语句骨架(已存在则跳转);亦可用 Alt+Shift+Click 触发">
+            <add-to-group group-id="GenerateGroup" anchor="first"/>
+            <add-to-group group-id="EditorPopupMenu" anchor="first"/>
+        </action>
+
+        <!-- DDL → Rust struct + DAO + mapper XML 脚手架(.sql 文件内触发) -->
+        <action id="hirust.mapper.navigator.GenerateFromDdl"
+            class="com.hirust.mapper.navigation.GenerateFromDdlAction"
+            text="Generate Scaffolding from DDL (mapper)"
+            description="解析 CREATE TABLE DDL,生成 Rust struct + DAO + mapper XML 三份脚手架">
             <add-to-group group-id="GenerateGroup" anchor="first"/>
             <add-to-group group-id="EditorPopupMenu" anchor="first"/>
         </action>
