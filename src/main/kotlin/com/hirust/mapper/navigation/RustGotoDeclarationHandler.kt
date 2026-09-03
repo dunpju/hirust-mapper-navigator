@@ -138,7 +138,14 @@ class RustGotoDeclarationHandler : GotoDeclarationHandler {
                 }
             }
         }
-        return null
+        // struct 类型名 → Find Usages 弹窗(聚合 Rust 引用/use 导入/泛型/返回值/XML resultType)
+        val typeLoc = RustDaoIndex.getInstance(project).findType(word.text) ?: return null
+        val defTarget = NavigationUtil.findElement(typeLoc.file, project, typeLoc.type.nameOffset)
+            ?: return null
+        if (isClickContext()) {
+            RustStructUsageSearcher.showAsync(project, word.text)
+        }
+        return arrayOf(defTarget)
     }
 
     /** 取 offset 处的词;offset 落在词尾边界后的非词字符上时回退取前一个词 */
