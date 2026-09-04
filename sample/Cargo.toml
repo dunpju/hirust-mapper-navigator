@@ -3,7 +3,11 @@ name = "hirust-mapper-sample"
 version = "0.1.0"
 edition = "2021"
 
-# 实际项目中 hirust-mapper 以 path 依赖引入,例如:
-# [dependencies]
-# hirust-mapper = { path = "../../hirust-mapper/hirust-mapper" }
-# tokio = { version = "1", features = ["full"] }
+[dependencies]
+# 库位于 E:\share\hirust-mapper（相对 server/ 包目录为 ../../hirust-mapper）
+hirust-mapper = { path = "../../hirust-mapper/hirust-mapper", features = ["full", "mysql"] }
+# #[dao] 宏生成代码直接引用 ::hirust_mapper_runtime，需显式依赖
+hirust-mapper-runtime = { path = "../../hirust-mapper/hirust-mapper-runtime" }
+# #[dao] 宏生成代码引用 ::serde_json
+serde_json = "1"
+serde = { version = "1.0.229", features = ["derive"] }

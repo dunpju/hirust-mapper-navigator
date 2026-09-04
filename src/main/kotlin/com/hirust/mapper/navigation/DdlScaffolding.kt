@@ -192,30 +192,37 @@ object DdlScaffolding {
     /** 生成 DAO 文件内容 */
     fun daoCode(table: DdlTable, namespace: String, modelModule: String): String {
         val struct = structName(table.name)
-        val import = if (modelModule.isNotEmpty()) "use $modelModule::$struct;\n" else ""
+        val modelImport = if (modelModule.isNotEmpty()) "use $modelModule::$struct;\n" else ""
+        val header = "use std::sync::Arc;\n" +
+                "use hirust_mapper::{dao, Result};\n" +
+                "use hirust_mapper_runtime::SqlSessionFactory;\n" +
+                modelImport
         val idCol = table.columns.firstOrNull { it.isPk } ?: table.columns.firstOrNull()
         val idName = idCol?.let { fieldName(it.name) } ?: "id"
         val idType = idCol?.let { rustTypeFor(it.sqlType, false) } ?: "u64"
         return """
-            |$import
+            |pub struct ${struct}Dao {
+            |    __hm_factory: Arc<SqlSessionFactory>,
+            |}
+            |
             |#[dao(namespace = "$namespace")]
             |impl ${struct}Dao {
             |    #[mapper_query]
-            |    pub async fn get_all(&self) -> Vec<$struct> {}
+            |    pub async fn get_all(&self) -> Result<Vec<$struct>> {}
             |
             |    #[mapper_query]
-            |    pub async fn get_by_id(&self, $idName: $idType) -> $struct {}
+            |    pub async fn get_by_id(&self, $idName: $idType) -> Result<$struct> {}
             |
-            |    #[mapper_insert]
-            |    pub async fn create(&self, p: &$struct) -> u64 {}
+            |    #[mapper_query(kind = "insert")]
+            |    pub async fn create(&self, p: &$struct) -> Result<()> {}
             |
-            |    #[mapper_update]
-            |    pub async fn update(&self, p: &$struct) -> u64 {}
+            |    #[mapper_query(kind = "update")]
+            |    pub async fn update(&self, p: &$struct) -> Result<()> {}
             |
-            |    #[mapper_delete]
-            |    pub async fn remove(&self, $idName: $idType) -> u64 {}
+            |    #[mapper_query(kind = "delete")]
+            |    pub async fn remove(&self, $idName: $idType) -> Result<()> {}
             |}
-        """.trimMargin().let { import + it.substringAfter("\n") } + "\n"
+        """.trimMargin().let { header + "\n" + it } + "\n"
     }
 
     /** 生成 mapper XML 文件内容(SQL 列名用原始名;占位符用 Rust 字段名) */

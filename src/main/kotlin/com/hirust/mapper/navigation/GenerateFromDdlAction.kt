@@ -182,11 +182,25 @@ class GenerateFromDdlAction : AnAction() {
         return result
     }
 
-    /** mod.rs 存在时追加 `pub mod xxx;`(已存在则跳过) */
+    /** mod.rs 不存在则创建;存在时追加 `pub mod xxx;`(已存在则跳过) */
     private fun appendModDecl(project: Project, dir: String, moduleName: String) {
-        val modFile = LocalFileSystem.getInstance()
-            .refreshAndFindFileByPath(Paths.get(dir, "mod.rs").toString().replace('\\', '/'))
-            ?: return
+        val modPath = Paths.get(dir, "mod.rs").toString().replace('\\', '/')
+        val modFile = LocalFileSystem.getInstance().refreshAndFindFileByPath(modPath)
+
+        if (modFile == null) {
+            // 新建目录:创建 mod.rs 并写入首条声明
+            writeIfAbsent(project, modPath, "pub mod $moduleName;\n")
+            // 向上级目录的 mod.rs 追加本目录的模块声明(如 `pub mod models;`)
+            val parentDir = dir.substringBeforeLast('/').let {
+                if (it == dir) null else it
+            }
+            if (parentDir != null) {
+                val parentModName = dir.substringAfterLast('/')
+                appendModDecl(project, parentDir, parentModName)
+            }
+            return
+        }
+
         val doc = FileDocumentManager.getInstance().getDocument(modFile) ?: return
         val decl = "pub mod $moduleName;\n"
         if (doc.text.contains("pub mod $moduleName;")) return

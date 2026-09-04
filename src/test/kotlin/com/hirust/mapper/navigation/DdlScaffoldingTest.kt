@@ -82,10 +82,12 @@ class DdlScaffoldingTest {
         )
         assertTrue(code.contains("#[dao(namespace = \"crate::app::dao::privilege_user_dao\")]"))
         assertTrue(code.contains("use crate::app::models::PrivilegeUser;"))
+        assertTrue(code.contains("pub struct PrivilegeUserDao {"))
+        assertTrue(code.contains("__hm_factory: Arc<SqlSessionFactory>"))
         assertTrue(code.contains("#[mapper_query]"))
-        assertTrue(code.contains("pub async fn get_by_id(&self, id: i64) -> PrivilegeUser {}"))
-        assertTrue(code.contains("#[mapper_insert]"))
-        assertTrue(code.contains("#[mapper_delete]"))
+        assertTrue(code.contains("pub async fn get_by_id(&self, id: i64) -> Result<PrivilegeUser> {}"))
+        assertTrue(code.contains("""#[mapper_query(kind = "insert")]"""))
+        assertTrue(code.contains("""#[mapper_query(kind = "delete")]"""))
     }
 
     @Test

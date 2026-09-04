@@ -7,3 +7,5 @@ build/
 *.zip
 *.iml
 .idea/
+/sample/target/
+/sample/Cargo.lock
