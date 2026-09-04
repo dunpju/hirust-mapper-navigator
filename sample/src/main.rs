@@ -1,8 +1,9 @@
 //! 手动验证样例:`.with_mapper_paths(vec![...])` 配置声明 XML 资源目录,
 //! 插件由此自动发现 mapper XML 文件。
 //!
-//! 注意:本样例不依赖真实 hirust-mapper crate(仅用于插件导航验证),
-//! 相关类型以占位形式声明。
+//! 本样例仅用于插件导航验证,不实际运行数据库操作。
+
+#![allow(dead_code)]
 //!
 //! v1.2.2:改为真实的链式调用形态 —— 模式相对【crate 根】解析
 //! (运行时 `SqlSessionFactory::build(config, ".")` 以 crate 根为基准),
