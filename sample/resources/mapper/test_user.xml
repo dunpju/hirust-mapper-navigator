@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mapper namespace="crate::app::dao::test_user_dao">
+
+    <select id="get_all" resultType="TestUser">
+        SELECT `id`, `name`, `age`, `is_active` FROM test_user
+    </select>
+
+    <select id="get_by_id" resultType="TestUser">
+        SELECT `id`, `name`, `age`, `is_active` FROM test_user WHERE `id` = #{id}
+    </select>
+
+    <insert id="create">
+        INSERT INTO test_user (`id`, `name`, `age`, `is_active`)
+        VALUES (#{id}, #{name}, #{age}, #{is_active})
+    </insert>
+
+    <update id="update">
+        UPDATE test_user SET `name` = #{name}, `age` = #{age}, `is_active` = #{is_active}
+        WHERE `id` = #{id}
+    </update>
+
+    <delete id="remove">
+        DELETE FROM test_user WHERE `id` = #{id}
+    </delete>
+
+</mapper>

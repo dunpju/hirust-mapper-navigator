@@ -143,33 +143,21 @@ class GenerateFromDdlAction : AnAction() {
     // 文件写入
     // ------------------------------------------------------------------
 
-    /** 文件不存在则创建并写入;返回 (null=已跳过, Pair(vf, path)=已创建) */
+    /** 文件不存在则创建并写入(VFS 创建+写入均包 WriteCommandAction);返回 null=已跳过 */
     private fun writeIfAbsent(project: Project, absPath: String, content: String): Pair<VirtualFile, String>? {
         val lfs = LocalFileSystem.getInstance()
         val fixed = absPath.replace('\\', '/')
         lfs.refreshAndFindFileByPath(fixed)?.let { return null }
 
-        val dirPath = fixed.substringBeforeLast('/')
-        val dir = lfs.refreshAndFindFileByPath(dirPath)
-            ?: createDirectories(lfs, dirPath) ?: return null
-
-        val vf = dir.createChildData(this, fixed.substringAfterLast('/'))
+        var result: Pair<VirtualFile, String>? = null
         WriteCommandAction.runWriteCommandAction(project, "Generate DDL Scaffolding", null, {
+            val dirPath = fixed.substringBeforeLast('/')
+            val dir = lfs.refreshAndFindFileByPath(dirPath) ?: return@runWriteCommandAction
+            val vf = dir.createChildData(this, fixed.substringAfterLast('/'))
             FileDocumentManager.getInstance().getDocument(vf)?.setText(content)
+            result = vf to fixed
         })
-        return vf to fixed
-    }
-
-    private fun createDirectories(lfs: LocalFileSystem, dirPath: String): VirtualFile? {
-        var current: VirtualFile? = null
-        for (segment in dirPath.split('/').filter { it.isNotEmpty() }) {
-            current = current?.findChild(segment)
-                ?: lfs.refreshAndFindFileByPath(
-                    dirPath.substring(0, dirPath.indexOf("/$segment") + segment.length + 1)
-                )
-                ?: current?.createChildDirectory(this, segment)
-        }
-        return current
+        return result
     }
 
     /** mod.rs 存在时追加 `pub mod xxx;`(已存在则跳过) */

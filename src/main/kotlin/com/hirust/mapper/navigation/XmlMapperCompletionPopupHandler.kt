@@ -119,7 +119,8 @@ class XmlMapperCompletionPopupHandler : TypedHandlerDelegate() {
     companion object {
         private val LOG = com.intellij.openapi.diagnostic.Logger
             .getInstance("HirustCompletionDiag")
-        private val SHOW_ALARM = com.intellij.util.Alarm()
+        /** lazy:Alarm 构造器内部请求服务,不能在 companion 初始化(<clinit>)中执行 */
+        private val SHOW_ALARM: com.intellij.util.Alarm by lazy { com.intellij.util.Alarm() }
         private const val SHOW_DELAY_MS = 250
     }
 }
