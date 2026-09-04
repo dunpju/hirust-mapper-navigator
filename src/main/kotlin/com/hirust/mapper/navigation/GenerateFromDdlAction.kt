@@ -5,6 +5,7 @@ import com.intellij.notification.NotificationType
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileTypes.FileType
@@ -77,6 +78,14 @@ class GenerateFromDdlAction : AnAction() {
             appendModDecl(project, ctx.daoDir, "${table.name}_dao")
         }
 
+        // 生成后立即强制重建索引(后台),使新文件可被跳转/补全立刻感知
+        ApplicationManager.getApplication().executeOnPooledThread {
+            try {
+                MapperScanCoordinator.getInstance(project).forceRebuild()
+            } catch (_: Exception) {
+            }
+        }
+
         val msg = buildString {
             append("DDL 脚手架:${tables.size} 张表,生成 ${created.size} 个文件")
             if (skipped.isNotEmpty()) append(";跳过已存在:${skipped.joinToString(", ")}")
@@ -143,15 +152,20 @@ class GenerateFromDdlAction : AnAction() {
     // 文件写入
     // ------------------------------------------------------------------
 
-    /** 文件不存在则创建并写入(VFS 创建+写入均包 WriteCommandAction);返回 null=已跳过 */
+    /** 文件不存在则创建并写入(目录不存在则 mkdirs;VFS 操作包 WriteCommandAction);返回 null=已跳过 */
     private fun writeIfAbsent(project: Project, absPath: String, content: String): Pair<VirtualFile, String>? {
         val lfs = LocalFileSystem.getInstance()
         val fixed = absPath.replace('\\', '/')
         lfs.refreshAndFindFileByPath(fixed)?.let { return null }
 
+        // Java IO 递归创建目录(比 VFS 逐级简单可靠),再刷新 VFS 获取句柄
+        val dirPath = fixed.substringBeforeLast('/')
+        val dirIo = java.io.File(dirPath)
+        if (!dirIo.exists() && !dirIo.mkdirs()) return null
+        lfs.refreshAndFindFileByPath(dirPath) ?: return null
+
         var result: Pair<VirtualFile, String>? = null
         WriteCommandAction.runWriteCommandAction(project, "Generate DDL Scaffolding", null, {
-            val dirPath = fixed.substringBeforeLast('/')
             val dir = lfs.refreshAndFindFileByPath(dirPath) ?: return@runWriteCommandAction
             val vf = dir.createChildData(this, fixed.substringAfterLast('/'))
             FileDocumentManager.getInstance().getDocument(vf)?.setText(content)
