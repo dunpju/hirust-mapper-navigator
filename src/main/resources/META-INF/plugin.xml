@@ -19,7 +19,7 @@
         ]]>
     </description>
     <vendor email="dengpju@hirust.com" url="https://hirust.com">hirust</vendor>
-    <version>1.5.4</version>
+    <version>1.5.5</version>
     <icon>icons/pluginIcon.svg</icon>
 
     <depends>com.intellij.modules.platform</depends>

@@ -78,13 +78,20 @@ class GenerateFromDdlAction : AnAction() {
             appendModDecl(project, ctx.daoDir, "${table.name}_dao")
         }
 
-        // 生成后立即强制重建索引(后台),使新文件可被跳转/补全立刻感知
-        ApplicationManager.getApplication().executeOnPooledThread {
+        // 保存所有文档(mod.rs 追加等编辑从内存刷到磁盘),再强制重建索引
+        ApplicationManager.getApplication().invokeLater({
+            if (project.isDisposed) return@invokeLater
             try {
-                MapperScanCoordinator.getInstance(project).forceRebuild()
+                FileDocumentManager.getInstance().saveAllDocuments()
             } catch (_: Exception) {
             }
-        }
+            ApplicationManager.getApplication().executeOnPooledThread {
+                try {
+                    MapperScanCoordinator.getInstance(project).forceRebuild()
+                } catch (_: Exception) {
+                }
+            }
+        }, project.disposed)
 
         val msg = buildString {
             append("DDL 脚手架:${tables.size} 张表,生成 ${created.size} 个文件")
@@ -152,13 +159,13 @@ class GenerateFromDdlAction : AnAction() {
     // 文件写入
     // ------------------------------------------------------------------
 
-    /** 文件不存在则创建并写入(目录不存在则 mkdirs;VFS 操作包 WriteCommandAction);返回 null=已跳过 */
+    /** 文件不存在则创建并写入(目录不存在则 mkdirs;VfsUtil 直写磁盘);返回 null=已跳过 */
     private fun writeIfAbsent(project: Project, absPath: String, content: String): Pair<VirtualFile, String>? {
         val lfs = LocalFileSystem.getInstance()
         val fixed = absPath.replace('\\', '/')
         lfs.refreshAndFindFileByPath(fixed)?.let { return null }
 
-        // Java IO 递归创建目录(比 VFS 逐级简单可靠),再刷新 VFS 获取句柄
+        // Java IO 递归创建目录,再刷新 VFS 获取句柄
         val dirPath = fixed.substringBeforeLast('/')
         val dirIo = java.io.File(dirPath)
         if (!dirIo.exists() && !dirIo.mkdirs()) return null
@@ -168,7 +175,8 @@ class GenerateFromDdlAction : AnAction() {
         WriteCommandAction.runWriteCommandAction(project, "Generate DDL Scaffolding", null, {
             val dir = lfs.refreshAndFindFileByPath(dirPath) ?: return@runWriteCommandAction
             val vf = dir.createChildData(this, fixed.substringAfterLast('/'))
-            FileDocumentManager.getInstance().getDocument(vf)?.setText(content)
+            // VfsUtil 直写磁盘(不经过 Document 层),索引可立即读取
+            com.intellij.openapi.vfs.VfsUtil.saveText(vf, content)
             result = vf to fixed
         })
         return result
