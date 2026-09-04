@@ -21,8 +21,9 @@ object DdlScaffolding {
 
     data class DdlTable(val name: String, val columns: List<DdlColumn>)
 
-    private val CREATE_TABLE_HEAD =
-        Regex("""(?i)create\s+table\s+(?:if\s+not\s+exists\s+)?`?([a-zA-Z0-9_]+)`?\s*\("""")
+    private val CREATE_TABLE_HEAD = Regex(
+        """(?i)create\s+table\s+(?:if\s+not\s+exists\s+)?[`]?([a-zA-Z0-9_]+)[`]?\s*\("""
+    )
 
     /** 表级约束关键字(行首命中则跳过该行) */
     private val CONSTRAINT_KEYWORDS =
@@ -62,7 +63,8 @@ object DdlScaffolding {
             val rest = seg.substringAfterFirstToken()
             val typeMatch = Regex("""^([a-zA-Z]+)(\s*\(\s*\d+\s*(,\s*\d+\s*)?\))?""").find(rest.trim())
                 ?: continue
-            val sqlType = typeMatch.groupValues[1].uppercase()
+            // 完整类型含括号参数(区分 TINYINT 与 TINYINT(1)=bool)
+            val sqlType = typeMatch.value.uppercase()
             val afterType = rest.trim().substring(typeMatch.value.length)
             val upper = afterType.uppercase()
             val inlinePk = upper.contains("PRIMARY KEY")
@@ -146,17 +148,19 @@ object DdlScaffolding {
     fun fieldName(column: String): String =
         if (column in RUST_KEYWORDS) "r#$column" else column
 
-    /** SQL 类型 → Rust 类型(可空再包 Option) */
+    /** SQL 类型 → Rust 类型(可空再包 Option);TINYINT(1)/BIT 视为 bool */
     fun rustTypeFor(sqlType: String, nullable: Boolean): String {
-        val base = when (sqlType.uppercase()) {
-            "TINYINT" -> "i8"
-            "SMALLINT", "INT2" -> "i16"
-            "MEDIUMINT", "INT", "INTEGER", "INT4" -> "i32"
-            "BIGINT", "INT8" -> "i64"
-            "FLOAT", "REAL", "FLOAT4" -> "f32"
-            "DOUBLE", "DOUBLEPRECISION", "FLOAT8" -> "f64"
-            "BOOLEAN", "BOOL" -> "bool"
-            "BLOB", "TINYBLOB", "MEDIUMBLOB", "LONGBLOB", "BINARY", "VARBINARY", "BYTEA" -> "Vec<u8>"
+        val u = sqlType.uppercase().replace(Regex("""\s+"""), "")
+        val base = when {
+            u == "TINYINT(1)" || u == "BIT(1)" || u == "BIT" || u == "BOOLEAN" || u == "BOOL" -> "bool"
+            u.startsWith("TINYINT") -> "i8"
+            u.startsWith("SMALLINT") || u == "INT2" -> "i16"
+            u.startsWith("MEDIUMINT") || u == "INT" || u == "INTEGER" || u == "INT4" -> "i32"
+            u.startsWith("BIGINT") || u == "INT8" -> "i64"
+            u == "FLOAT" || u == "REAL" || u == "FLOAT4" -> "f32"
+            u == "DOUBLE" || u == "DOUBLEPRECISION" || u == "FLOAT8" || u.startsWith("DOUBLE") -> "f64"
+            u.startsWith("DECIMAL") || u.startsWith("NUMERIC") -> "f64"
+            u.startsWith("BLOB") || u.startsWith("BINARY") || u.startsWith("VARBINARY") || u == "BYTEA" -> "Vec<u8>"
             else -> "String"
         }
         return if (nullable) "Option<$base>" else base

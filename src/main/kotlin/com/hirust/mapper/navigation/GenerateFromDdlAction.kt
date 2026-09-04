@@ -111,10 +111,13 @@ class GenerateFromDdlAction : AnAction() {
         else Paths.get(daoDir).parent.resolve("models").toString()
 
         // xml 目录:with_mapper_paths 首个字面目录,缺省 resources/mapper
-        val pattern = MapperPathsConfig.getInstance(project).patterns.firstOrNull()
-        val xmlDir = pattern?.substringBeforeLast("**")?.trimEnd('/')?.let {
-            Paths.get(base, it).toString()
-        } ?: Paths.get(base, "resources", "mapper").toString()
+        val defaultXmlDir = Paths.get(base, "resources", "mapper").toString()
+        val mp = MapperPathsConfig.getInstance(project).patterns.firstOrNull()
+        val xmlDir = if (mp != null) {
+            val dirPart = mp.pattern.substringBeforeLast("**").trimEnd('/')
+            val dirRoot = mp.baseDirPath?.takeIf { it.isNotEmpty() } ?: base
+            if (dirPart.isNotEmpty()) Paths.get(dirRoot, dirPart).toString() else defaultXmlDir
+        } else defaultXmlDir
 
         return ProjectContext(daoDir, modelsDir, xmlDir, ns, lastSegment)
     }

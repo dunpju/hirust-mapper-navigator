@@ -47,11 +47,13 @@ class DdlScaffoldingTest {
         assertEquals("i64", DdlScaffolding.rustTypeFor("BIGINT", false))
         assertEquals("i32", DdlScaffolding.rustTypeFor("INT", false))
         assertEquals("Option<i32>", DdlScaffolding.rustTypeFor("INT", true))
-        assertEquals("bool", DdlScaffolding.rustTypeFor("TINYINT", false))
+        assertEquals("bool", DdlScaffolding.rustTypeFor("TINYINT(1)", false))
+        assertEquals("i8", DdlScaffolding.rustTypeFor("TINYINT", false))
         assertEquals("String", DdlScaffolding.rustTypeFor("VARCHAR", false))
         assertEquals("Option<String>", DdlScaffolding.rustTypeFor("DATETIME", true))
         assertEquals("Vec<u8>", DdlScaffolding.rustTypeFor("BLOB", false))
         assertEquals("f64", DdlScaffolding.rustTypeFor("DOUBLE", false))
+        assertEquals("f64", DdlScaffolding.rustTypeFor("DECIMAL(10,2)", false))
     }
 
     @Test
