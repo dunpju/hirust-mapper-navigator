@@ -98,6 +98,22 @@ let mapper_config = HirustMapperConfig::new()
 - 生成后**无需保存**即可 Ctrl+Click 双向跳转(未保存文档兜底)
 - 亦可通过 Generate 菜单 / 右键菜单触发
 
+### 7. DDL → Rust struct + DAO + mapper XML 脚手架(v1.5.x)
+
+在 `.sql` 文件中编写/粘贴 `CREATE TABLE` DDL → 右键 **Generate Scaffolding from DDL** → 一键生成三份文件:
+
+| 生成文件 | 位置 | 内容 |
+|---------|------|------|
+| `src/app/models/<表名>.rs` | models 目录(自动探测/创建) | `#[derive(Debug, Clone, Serialize, Deserialize)] pub struct PascalCase` |
+| `src/app/dao/<表名>_dao.rs` | dao 目录 | struct 定义 + 构造器 + `#[dao(namespace, xml)]` + 5 个 CRUD `#[mapper_query]` 方法 |
+| `resources/mapper/<表名>.xml` | mapper 目录 | 5 条 CRUD 语句 |
+
+- **SQL → Rust 类型映射**:TINYINT(1)→bool、INT→i32、BIGINT→i64、VARCHAR/DATE→String、DECIMAL→f64、BLOB→Vec&lt;u8&gt;;可空列包 Option
+- **依赖前置检查**:Cargo.toml 缺 hirust-mapper / hirust-mapper-runtime / serde_json / serde 时弹确认框(用户可选继续)
+- **路径全部从 .sql 所在 Cargo 根推导**(兼容项目根 ≠ crate 根)
+- mod.rs 自动递归创建/追加声明链;生成后立即 forceRebuild 索引,可跳转
+- 已存在文件跳过;参照 `question_image_dao.rs` 风格(insert→Result&lt;i64&gt;、update/delete→Result&lt;u64&gt;)
+
 ### 环境兼容性
 
 | 环境 | Rust→XML Ctrl+Click | Rust 悬停下划线/图标 | XML→Rust Ctrl+Click | XML→Rust 图标 |
@@ -135,13 +151,13 @@ git push origin v1.0.0
 gradlew.bat buildPlugin
 ```
 
-构建产物位于 `build/distributions/hirust-mapper-navigator-1.4.4.zip`。
+构建产物位于 `build/distributions/hirust-mapper-navigator-1.5.16.zip`。
 
 ### 在 RustRover 中安装
 
 1. 打开 RustRover → **Settings** → **Plugins**
 2. 点击 **⚙️** → **Install Plugin from Disk...**
-3. 选择 `build/distributions/hirust-mapper-navigator-1.4.4.zip`
+3. 选择 `build/distributions/hirust-mapper-navigator-1.5.16.zip`
 4. 重启 RustRover
 
 ### 调试模式运行
@@ -192,8 +208,8 @@ hirust-mapper-navigator/
 
 | RustRover | IntelliJ Platform | 插件版本 |
 |-----------|-------------------|----------|
-| 2026.2.x  | CL 2024.2.x      | 1.0.0    |
-| 2024.3.x  | CL 2024.2.x      | 1.0.0    |
+| 2026.2.x  | CL 2024.2.x      | 1.5.16   |
+| 2024.3.x  | CL 2024.2.x      | 1.5.16   |
 
 ## 后续计划（二期）
 
@@ -206,4 +222,4 @@ hirust-mapper-navigator/
 - [x] `resultType` → Rust struct 定义跳转（v1.2.7）
 - [x] namespace / 语句 id 自动补全（v1.3.0，输入即弹出、标签类型过滤、排除已占用 id）
 - [x] JPA 提示式语句生成（v1.4.x，Alt+Shift+Click 触发、struct 字段展开、表名推导）
-- [ ] 数据库表 → Rust 结构体 + DAO + XML 代码生成
+- [x] DDL → Rust 结构体 + DAO + XML 代码生成（v1.5.x，CREATE TABLE 一键脚手架、依赖检查、mod.rs 递归创建）

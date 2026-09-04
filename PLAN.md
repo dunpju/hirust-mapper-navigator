@@ -685,3 +685,34 @@ TypedHandlerDelegate.charTyped(第4参已从 FileType 改为 PsiFile —— 2024
 | 1 | 生成后未保存状态 Ctrl+Click 报 "Cannot find declaration to go to" | **未保存文档兜底下沉到 `XmlNamespaceIndex.findStatement`**(currentMapperInfo:打开且已修改 → 解析当前文档)—— 一处修复全体调用方受益 |
 | 2 | 生成语句间无空行 / `</insert></mapper>` 挤行 | 无条件前置 `\n` + 语句后补 `\n`(`</mapper>` 独占一行) |
 | 3 | 气泡出现空 select 选框 | 气泡按 HTML 渲染,`<select>` 被当元素 → 文案去掉尖括号(`已生成语句:get_by_id`) |
+
+---
+
+## 十七、DDL → Rust struct + DAO + XML 脚手架(v1.5.x)
+
+### 17.1 功能
+
+`.sql` 文件中 CREATE TABLE → 右键 Generate → 三份文件(struct/models、DAO、mapper XML)。
+
+### 17.2 关键实现
+
+- **路径基准**:从 .sql 文件向上找 Cargo.toml(crate 根),不用 project.basePath(插件项目根 ≠ Rust crate 根)
+- **依赖检查**:Cargo.toml 缺 hirust-mapper / hirust-mapper-runtime / serde_json / serde → Yes/No 确认框(不阻断)
+- **目录创建**:Java IO `mkdirs()`(VFS 逐级创建首段盘符即断链)
+- **文件写入**:`VfsUtil.saveText` 直写磁盘(不经 Document 层,索引可立即读取)
+- **mod.rs**:递归创建 + 追加声明链;`ensureParentModDecl` 无条件补父级
+- **索引**:生成后 `saveAllDocuments` → 后台 `forceRebuild`,立即可跳转
+- **返回类型**(经编译验证):insert→`Result<i64>`、update/delete→`Result<u64>`、get_by_id→`Result<Option<T>>`
+
+### 17.3 踩坑记录
+
+| # | 问题 | 根因 | 修复 |
+|---|------|------|------|
+| 1 | VFS createChildDirectory 报 write-action 错 | 文件创建在 WriteCommandAction 外 | 全部包入 |
+| 2 | Alarm 在 companion 初始化报服务依赖错误 | `<clinit>` 不能请求服务 | `by lazy` |
+| 3 | models 目录不生成 | createDirRecursive 从 null 起步首段断链 | Java IO mkdirs |
+| 4 | 生成后跳转不工作 | setText 只写内存,磁盘空文件 | VfsUtil.saveText + saveAllDocuments + forceRebuild |
+| 5 | app/mod.rs 无 pub mod models | appendModDecl 仅新建时向上递归 | ensureParentModDecl 无条件调用 |
+| 6 | 文件生成到插件项目根 | project.basePath ≠ crate 根 | 从 .sql 向上找 Cargo.toml |
+| 7 | insert 返回类型不匹配 | 宏 gen_mapper.rs:insert→Result<Option<i64>>,但实际 Result<i64> 可编译 | 经编译验证用 Result<i64> |
+| 8 | 模板缺 use/struct/serde | 初版模板过于简陋 | 对齐 question_image_dao.rs 完整写法 |
