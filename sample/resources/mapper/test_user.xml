@@ -6,7 +6,7 @@
     </select>
 
     <select id="get_by_id" resultType="TestUser">
-        SELECT `id`, `name`, `age`, `is_active` FROM test_user WHERE `id` = #{id}
+        SELECT `id`, `name`, `age`, `is_active` FROM test_user WHERE `id` = #{test_user_id}
     </select>
 
     <insert id="create">
@@ -20,7 +20,7 @@
     </update>
 
     <delete id="remove">
-        DELETE FROM test_user WHERE `id` = #{id}
+        DELETE FROM test_user WHERE `id` = #{test_user_id}
     </delete>
 
 </mapper>

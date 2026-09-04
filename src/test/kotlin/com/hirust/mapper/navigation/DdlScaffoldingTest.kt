@@ -66,6 +66,8 @@ class DdlScaffoldingTest {
     @Test
     fun `struct code generated`() {
         val code = DdlScaffolding.structCode(DdlScaffolding.parseCreateTables(ddl)[0])
+        assertTrue(code.contains("use serde::{Deserialize, Serialize};"))
+        assertTrue(code.contains("#[derive(Debug, Clone, Serialize, Deserialize)]"))
         assertTrue(code.contains("pub struct PrivilegeUser {"))
         assertTrue(code.contains("pub id: i64,"))
         assertTrue(code.contains("pub balance: Option<f64>,"))
@@ -80,12 +82,14 @@ class DdlScaffoldingTest {
             "crate::app::dao::privilege_user_dao",
             "crate::app::models"
         )
-        assertTrue(code.contains("#[dao(namespace = \"crate::app::dao::privilege_user_dao\")]"))
-        assertTrue(code.contains("use crate::app::models::PrivilegeUser;"))
+        assertTrue(code.contains("use crate::app::models::privilege_user::PrivilegeUser;"))
+        assertTrue(code.contains("use hirust_mapper::{dao, Result, SqlSessionFactory};"))
         assertTrue(code.contains("pub struct PrivilegeUserDao {"))
         assertTrue(code.contains("__hm_factory: Arc<SqlSessionFactory>"))
-        assertTrue(code.contains("#[mapper_query]"))
-        assertTrue(code.contains("pub async fn get_by_id(&self, id: i64) -> Result<PrivilegeUser> {}"))
+        assertTrue(code.contains("pub fn new(factory: SqlSessionFactory) -> Self"))
+        assertTrue(code.contains("pub fn from_arc"))
+        assertTrue(code.contains("#[dao(namespace = \"crate::app::dao::privilege_user_dao\")]"))
+        assertTrue(code.contains("pub async fn get_by_id(&self, privilege_user_id: i64) -> Result<Option<PrivilegeUser>> {}"))
         assertTrue(code.contains("""#[mapper_query(kind = "insert")]"""))
         assertTrue(code.contains("""#[mapper_query(kind = "delete")]"""))
     }
@@ -101,6 +105,7 @@ class DdlScaffoldingTest {
         assertTrue(xml.contains("SELECT `id`, `name`, `balance`, `age`, `is_admin`, `data`, `type`, `created_at` FROM privilege_user"))
         assertTrue(xml.contains("INSERT INTO privilege_user"))
         assertTrue(xml.contains("UPDATE privilege_user SET `name` = #{name}"))
-        assertTrue(xml.contains("DELETE FROM privilege_user WHERE `id` = #{id}"))
+        assertTrue(xml.contains("DELETE FROM privilege_user WHERE `id` = #{privilege_user_id}"))
+        assertTrue(xml.contains("SELECT `id`, `name`, `balance`, `age`, `is_admin`, `data`, `type`, `created_at` FROM privilege_user WHERE `id` = #{privilege_user_id}"))
     }
 }

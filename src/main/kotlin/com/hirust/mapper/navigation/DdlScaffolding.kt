@@ -175,14 +175,13 @@ object DdlScaffolding {
     // 代码生成
     // ------------------------------------------------------------------
 
-    /** 生成 Rust struct 文件内容 */
+    /** 生成 Rust struct 文件内容(含 serde 派生宏,可被宏生成的序列化代码引用) */
     fun structCode(table: DdlTable): String {
         val sb = StringBuilder()
-        sb.append("/// 表 `${table.name}` 对应模型(由 DDL 脚手架生成)\n")
-        sb.append("#[derive(Debug, Clone)]\n")
+        sb.append("use serde::{Deserialize, Serialize};\n\n")
+        sb.append("#[derive(Debug, Clone, Serialize, Deserialize)]\n")
         sb.append("pub struct ${structName(table.name)} {\n")
         for (col in table.columns) {
-            sb.append("    /// ${col.sqlType}${if (col.isPk) ", 主键" else ""}\n")
             sb.append("    pub ${fieldName(col.name)}: ${rustTypeFor(col.sqlType, col.nullable)},\n")
         }
         sb.append("}\n")
@@ -190,37 +189,59 @@ object DdlScaffolding {
     }
 
     /** 生成 DAO 文件内容 */
-    fun daoCode(table: DdlTable, namespace: String, modelModule: String): String {
+    fun daoCode(table: DdlTable, namespace: String, modelModule: String, xmlPath: String = ""): String {
         val struct = structName(table.name)
-        val modelImport = if (modelModule.isNotEmpty()) "use $modelModule::$struct;\n" else ""
-        val header = "use std::sync::Arc;\n" +
-                "use hirust_mapper::{dao, Result};\n" +
-                "use hirust_mapper_runtime::SqlSessionFactory;\n" +
+        val stem = table.name
+        // 模型导入路径包含模块名(文件名):use crate::app::models::test_user::TestUser;
+        val modelImport = if (modelModule.isNotEmpty()) "use $modelModule::$stem::$struct;\n" else ""
+        val header = "use std::sync::Arc;\n\n" +
+                "use hirust_mapper::{dao, Result, SqlSessionFactory};\n\n" +
                 modelImport
         val idCol = table.columns.firstOrNull { it.isPk } ?: table.columns.firstOrNull()
         val idName = idCol?.let { fieldName(it.name) } ?: "id"
         val idType = idCol?.let { rustTypeFor(it.sqlType, false) } ?: "u64"
+        // delete 参数用 <表名>_<列名> 避免宏对参数名 `id` 的特殊处理
+        val deleteIdName = idCol?.let { "${table.name}_${it.name}" } ?: "${table.name}_id"
+        val xmlAttr = if (xmlPath.isNotEmpty()) ", xml = \"$xmlPath\"" else ""
         return """
             |pub struct ${struct}Dao {
             |    __hm_factory: Arc<SqlSessionFactory>,
             |}
             |
-            |#[dao(namespace = "$namespace")]
+            |impl ${struct}Dao {
+            |    #[allow(dead_code)]
+            |    pub fn new(factory: SqlSessionFactory) -> Self {
+            |        Self {
+            |            __hm_factory: Arc::new(factory),
+            |        }
+            |    }
+            |
+            |    pub fn from_arc(factory: Arc<SqlSessionFactory>) -> Self {
+            |        Self { __hm_factory: factory }
+            |    }
+            |
+            |    #[allow(dead_code)]
+            |    pub fn factory(&self) -> &Arc<SqlSessionFactory> {
+            |        &self.__hm_factory
+            |    }
+            |}
+            |
+            |#[dao(namespace = "$namespace"$xmlAttr)]
             |impl ${struct}Dao {
             |    #[mapper_query]
             |    pub async fn get_all(&self) -> Result<Vec<$struct>> {}
             |
             |    #[mapper_query]
-            |    pub async fn get_by_id(&self, $idName: $idType) -> Result<$struct> {}
+            |    pub async fn get_by_id(&self, $deleteIdName: $idType) -> Result<Option<$struct>> {}
             |
             |    #[mapper_query(kind = "insert")]
-            |    pub async fn create(&self, p: &$struct) -> Result<()> {}
+            |    pub async fn create(&self, p: &$struct) -> Result<i64> {}
             |
             |    #[mapper_query(kind = "update")]
-            |    pub async fn update(&self, p: &$struct) -> Result<()> {}
+            |    pub async fn update(&self, p: &$struct) -> Result<u64> {}
             |
             |    #[mapper_query(kind = "delete")]
-            |    pub async fn remove(&self, $idName: $idType) -> Result<()> {}
+            |    pub async fn remove(&self, $deleteIdName: $idType) -> Result<u64> {}
             |}
         """.trimMargin().let { header + "\n" + it } + "\n"
     }
@@ -235,6 +256,9 @@ object DdlScaffolding {
         val updates = table.columns.filter { !it.isPk }
             .joinToString(", ") { "`${it.name}` = #{${fieldName(it.name)}}" }
         val whereId = "`$idName` = #{${fieldName(idName)}}"
+        // get_by_id / delete 占位符用 <表名>_<列名>(与 DAO 参数一致,避开宏对 `id` 的特殊处理)
+        val deleteIdName = idCol?.let { "${table.name}_${it.name}" } ?: "${table.name}_id"
+        val whereDeleteId = "`$idName` = #{$deleteIdName}"
         return """<?xml version="1.0" encoding="UTF-8"?>
             |<mapper namespace="$namespace">
             |
@@ -243,7 +267,7 @@ object DdlScaffolding {
             |    </select>
             |
             |    <select id="get_by_id" resultType="$struct">
-            |        SELECT $cols FROM ${table.name} WHERE $whereId
+            |        SELECT $cols FROM ${table.name} WHERE $whereDeleteId
             |    </select>
             |
             |    <insert id="create">
@@ -257,7 +281,7 @@ object DdlScaffolding {
             |    </update>
             |
             |    <delete id="remove">
-            |        DELETE FROM ${table.name} WHERE $whereId
+            |        DELETE FROM ${table.name} WHERE $whereDeleteId
             |    </delete>
             |
             |</mapper>
